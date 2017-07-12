@@ -1,0 +1,68 @@
+---
+title: "capstone_variablecreation"
+author: "Laura Olson"
+date: "May 20, 2017"
+output: html_document
+---
+
+```{r}
+#libraries being used in this file
+library(dplyr)
+
+
+```
+
+
+```{r}
+
+#### Modeling Chunk
+
+### build train data set
+patients_negative<-subset(patients,patients$HCV_STATUS==0)
+patients_positive<-subset(patients,patients$HCV_STATUS==1)
+
+train_negative<-sample_frac(patients_negative, 0.7)
+nrow(train_negative)
+
+train_positive<-sample_frac(patients_positive, 0.7)
+nrow(train_positive)
+train_positive<-train_positive[rep(1:nrow(train_positive),each=50),] 
+nrow(train_positive)
+
+
+ 
+ ## build test data set
+test_negative<-anti_join(patients_negative,train_negative)
+nrow(test_negative)
+
+test_positive<-anti_join(patients_positive,train_positive)
+nrow(test_positive)
+test_positive<-test_positive[rep(1:nrow(test_positive),each=50),] 
+nrow(test_positive)
+
+### bind the two tables (positive and negative for test and train)
+train_patients<-rbind(train_negative,train_positive)
+test_patients<-rbind(test_negative,test_positive)
+
+train_patients_vars<-train_patients[,3:ncol(train_patients)]
+test_patients_vars<-test_patients[,3:ncol(test_patients)]
+
+
+
+logistic_model<-glm(HCV_STATUS~. ,data=train_patients_vars, family=binomial(link=logit))
+summary(logistic_model)
+
+xp=logistic_model$fitted.values
+xp[xp>=0.5]=1 ### see if we want to use a smaller threshold for probability for categorization
+xp[xp<0.5]=0
+table(train_patients_vars$HCV_STATUS,xp)
+round(prop.table(table(train_patients_vars$HCV_STATUS,xp),1),2)
+
+
+xp<-predict(logistic_model,newdata=test_patients_vars,type="response")
+xp[xp>=0.5]=1
+xp[xp<0.5]=0
+table(test_patients_vars$HCV_STATUS,xp)
+
+```
+
