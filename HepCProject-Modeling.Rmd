@@ -8,6 +8,14 @@ output: html_document
 ```{r}
 #libraries being used in this file
 library(dplyr)
+library(ROSE)
+library(rpart)
+
+patients$SEX_ENC_TYPE<-as.factor(patients$SEX_ENC_TYPE)
+patients$Insurance_Gap<-as.factor(patients$Insurance_Gap)
+patients$Insurance_Aided<-as.factor(patients$Insurance_Aided)
+
+
 
 
 ```
@@ -63,6 +71,238 @@ xp<-predict(logistic_model,newdata=test_patients_vars,type="response")
 xp[xp>=0.5]=1
 xp[xp<0.5]=0
 table(test_patients_vars$HCV_STATUS,xp)
+round(prop.table(table(test_patients_vars$HCV_STATUS,xp),1),2)
+
+
+```
+
+
+
+
+```{r}
+
+### build train data set
+patients_negative_imb<-subset(patients,patients$HCV_STATUS==0)
+patients_positive_imb<-subset(patients,patients$HCV_STATUS==1)
+
+train_negative_imb<-sample_frac(patients_negative_imb, 0.7)
+nrow(train_negative_imb)
+
+train_positive_imb<-sample_frac(patients_positive_imb, 0.7)
+nrow(train_positive_imb)
+
+ 
+ ## build test data set
+test_negative_imb<-anti_join(patients_negative_imb,train_negative_imb)
+nrow(test_negative_imb)
+
+test_positive_imb<-anti_join(patients_positive_imb,train_positive_imb)
+nrow(test_positive_imb)
+
+### bind the two tables (positive and negative for test and train)
+train_patients_imb<-rbind(train_negative_imb,train_positive_imb)
+test_patients_imb<-rbind(test_negative_imb,test_positive_imb)
+
+train_patients_vars_imb<-train_patients_imb[,3:ncol(train_patients_imb)]
+test_patients_vars_imb<-test_patients_imb[,3:ncol(test_patients_imb)]
+
+
+str(train_patients_vars_imb)
+
+#check table
+table(train_patients_vars_imb$HCV_STATUS)
+
+#check classes distribution
+prop.table(table(train_patients_vars_imb$HCV_STATUS))
+
+
+#over sampling
+data_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "over",N = 300000)$data
+table(data_balanced_over$HCV_STATUS)
+
+test_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "over",N = 100000)$data
+table(test_balanced_over$HCV_STATUS)
+
+#make the number of items in the samples the same so the data set is balanced
+
+#In the code above, method over instructs the algorithm to perform over sampling. N refers to number of observations in the resulting balanced set. In this case, originally we had 980 negative observations. So, I instructed this line of code to over sample minority class until it reaches 980 and the total data set comprises of 1960 samples.
+#Similarly, we can perform undersampling as well. Remember, undersampling is done without replacement.
+
+data_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "under", N = 7000, seed = 1)$data
+table(data_balanced_under$HCV_STATUS)
+
+test_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "under", N = 7000, seed = 1)$data
+table(test_balanced_under$HCV_STATUS)
+
+
+#Now the data set is balanced. But, you see that we've lost significant information from the sample. Let's do both undersampling and oversampling on this imbalanced data. This can be achieved using method = "both". In this case, the minority class is oversampled with replacement and majority class is undersampled without replacement.
+
+data_balanced_both <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "both", p=0.5,N=100000, seed = 1)$data
+table(data_balanced_both$HCV_STATUS)
+
+test_balanced_both <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "both", p=0.5,N=100000, seed = 1)$data
+table(test_balanced_both$HCV_STATUS)
+
+
+
+
+#p refers to the probability of positive class in newly generated sample.The data generated from oversampling have expected amount of repeated observations. Data generated from undersampling is deprived of important information from the original data. This leads to inaccuracies in the resulting performance. To encounter these issues, ROSE helps us to generate data synthetically as well. The data generated using ROSE is considered to provide better estimate of original data.
+
+#####START ROSE SAMPLING##########
+data.rose <- ROSE(HCV_STATUS ~ ., data = train_patients_vars_imb, seed = 1)$data
+table(data.rose$HCV_STATUS)
+
+test.rose <- ROSE(HCV_STATUS ~ ., data = test_patients_vars_imb, seed = 1)$data
+table(test.rose$HCV_STATUS)
+
+#table(data.rose$HCV_STATUS)
+#This generated data has size equal to the original data set (1000 observations). Now, we've balanced data sets using 4 techniques. Let's compute the model using each data and evaluate its accuracy.
+
+#HH can't get it to work, get this error: Error in rose.sampl(n, N, p, ind.majo, majoY, ind.mino, minoY, y, classy,  :   The current implementation of ROSE handles only continuous and categorical variables.
+#####END ROSE SAMPLING##########
+
+###try logistic model on balanced data
+logistic_model_over<-glm(HCV_STATUS~. ,data=data_balanced_over, family=binomial(link=logit))
+summary(logistic_model_over)
+
+xp_bal_over=logistic_model_over$fitted.values
+xp_bal_over[xp_bal_over>=0.5]=1 ### see if we want to use a smaller threshold for probability for categorization
+xp_bal_over[xp_bal_over<0.5]=0
+table(data_balanced_over$HCV_STATUS,xp_bal_over)
+round(prop.table(table(data_balanced_over$HCV_STATUS,xp_bal_over),1),2)
+
+xp_pred_over<-predict(logistic_model_over,newdata=test_balanced_over,type="response")
+xp_pred_over[xp_pred_over>=0.5]=1
+xp_pred_over[xp_pred_over<0.5]=0
+table(test_balanced_over$HCV_STATUS,xp_pred_over)
+round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
+
+
+##Undersampling
+logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit))
+summary(logistic_model_under)
+
+xp_bal_under=logistic_model_under$fitted.values
+xp_bal_under[xp_bal_under>=0.5]=1 ### see if we want to use a smaller threshold for probability for categorization
+xp_bal_under[xp_bal_under<0.5]=0
+table(data_balanced_under$HCV_STATUS,xp_bal_under)
+round(prop.table(table(data_balanced_under$HCV_STATUS,xp_bal_under),1),2)
+
+xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
+xp_pred_under[xp_pred_under>=0.5]=1
+xp_pred_under[xp_pred_under<0.5]=0
+table(test_balanced_under$HCV_STATUS,xp_pred_under)
+round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+
+
+##Both Sampling
+logistic_model_both<-glm(HCV_STATUS~. ,data=data_balanced_both, family=binomial(link=logit))
+summary(logistic_model_both)
+
+xp_bal_both=logistic_model_both$fitted.values
+xp_bal_both[xp_bal_both>=0.5]=1 ### see if we want to use a smaller threshold for probability for categorization
+xp_bal_both[xp_bal_both<0.5]=0
+table(data_balanced_both$HCV_STATUS,xp_bal_both)
+round(prop.table(table(data_balanced_both$HCV_STATUS,xp_bal_both),1),2)
+
+
+xp_pred_both<-predict(logistic_model_both,newdata=test_balanced_both,type="response")
+xp_pred_both[xp_pred_both>=0.5]=1
+xp_pred_both[xp_pred_both<0.5]=0
+table(test_balanced_both$HCV_STATUS,xp_pred_both)
+round(prop.table(table(test_balanced_both$HCV_STATUS,xp_pred_both),1),2)
+
+### ROSE sampling
+logistic_model_rose<-glm(HCV_STATUS~. ,data=data.rose, family=binomial(link=logit))
+summary(logistic_model_rose)
+
+xp_bal_rose=logistic_model_rose$fitted.values
+xp_bal_rose[xp_bal_rose>=0.5]=1 ### see if we want to use a smaller threshold for probability for categorization
+xp_bal_rose[xp_bal_rose<0.5]=0
+table(data.rose$HCV_STATUS,xp_bal_rose)
+round(prop.table(table(data.rose$HCV_STATUS,xp_bal_rose),1),2)
+
+xp_pred_rose<-predict(logistic_model_rose,newdata=test.rose,type="response")
+xp_pred_rose[xp_pred_rose>=0.5]=1
+xp_pred_rose[xp_pred_rose<0.5]=0
+table(test.rose$HCV_STATUS,xp_pred_rose)
+round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
+
+##comparison
+sampled_log<-table(test_patients_vars$HCV_STATUS,xp); sampled_log
+round(prop.table(table(test_patients_vars$HCV_STATUS,xp),1),2)
+sampled_log_miscat<-(sampled_log[1,2]+sampled_log[2,1])/(sampled_log[1,2]+sampled_log[1,1]+sampled_log[2,1]+sampled_log[1,2])
+sampled_log_miscat
+
+over_samp_log<-table(test_balanced_over$HCV_STATUS,xp_pred_over);over_samp_log
+round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
+over_samp_miscat<-(over_samp_log[1,2]+over_samp_log[2,1])/(over_samp_log[1,2]+over_samp_log[1,1]+over_samp_log[2,1]+over_samp_log[1,2])
+over_samp_miscat
+
+under_samp_log<-table(test_balanced_under$HCV_STATUS,xp_pred_under);under_samp_log
+round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+under_samp_miscat<-(under_samp_log[1,2]+under_samp_log[2,1])/(under_samp_log[1,2]+under_samp_log[1,1]+under_samp_log[2,1]+under_samp_log[1,2])
+under_samp_miscat
+
+both_samp_log<-table(test_balanced_both$HCV_STATUS,xp_pred_both);both_samp_log
+round(prop.table(table(test_balanced_both$HCV_STATUS,xp_pred_both),1),2)
+both_samp_miscat<-(both_samp_log[1,2]+both_samp_log[2,1])/(both_samp_log[1,2]+both_samp_log[1,1]+both_samp_log[2,1]+both_samp_log[1,2])
+both_samp_miscat
+
+rose_samp_log<-table(test.rose$HCV_STATUS,xp_pred_rose);rose_samp_log
+round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
+rose_samp_miscat<-(rose_samp_log[1,2]+rose_samp_log[2,1])/(rose_samp_log[1,2]+rose_samp_log[1,1]+rose_samp_log[2,1]+rose_samp_log[1,2])
+rose_samp_miscat
+
+
+
+#######STOP HERE - BELOW CODE NOT CLEAN############
+
+#tree.rose <- rpart(cls ~ ., data = data.rose)
+tree.over <- rpart(HCV_STATUS ~ ., data = data_balanced_over)
+tree.under <- rpart(HCV_STATUS ~ ., data = data_balanced_under)
+tree.both <- rpart(HCV_STATUS ~ ., data = data_balanced_both)
+
+#make predictions on unseen data
+#pred.tree.rose <- predict(tree.rose, newdata = hacide.test)
+pred.tree.over <- predict(tree.over, newdata = test_patients_vars_imb)
+pred.tree.under <- predict(tree.under, newdata = test_patients_vars_imb)
+pred.tree.both <- predict(tree.both, newdata = test_patients_vars_imb)
+
+#It's time to evaluate the accuracy of respective predictions. Using inbuilt function roc.curve allows us to capture roc metric.
+
+#AUC ROSE
+#roc.curve(test_patients_vars_imb$HCV_STATUS, pred.tree.rose[,2])
+
+#AUC Oversampling
+#roc.curve(test_patients_vars_imb$HCV_STATUS, pred.tree.over[,2])
+
+#AUC Undersampling
+#roc.curve(test_patients_vars_imb$HCV_STATUS, pred.tree.under[,2])
+
+#AUC Both
+#roc.curve(test_patients_vars_imb$HCV_STATUS, pred.tree.both[,2])
+
+
+
+##### START - ROSE holdout calculation##################
+#This package also provide us methods to check the model accuracy using holdout and bagging method. This helps us to ensure that our resultant predictions doesn't suffer from high variance.
+
+ROSE.holdout <- ROSE.eval(cls ~ ., data = hacide.train, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
+ROSE.holdout
+#We see that our accuracy retains at ~ 0.98 and shows that our predictions aren't suffering from high variance. Similarly, you can use bootstrapping by setting method.assess to "BOOT". The parameter extr.pred is a function which extracts the column of probabilities belonging to positive class.
+
+ROSE.holdout <- ROSE.eval(cls ~ ., data = hacide.train, learner = rpart, method.assess = "BOOT", extr.pred = function(obj)obj[,2], seed = 1)
+ROSE.holdout
+
+##### END - ROSE holdout calculation##################
+
+
+
+```
+
+
+
 
 ```
 
