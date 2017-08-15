@@ -11,6 +11,7 @@ library(dplyr)
 library(ROSE)
 library(rpart)
 
+
 patients$SEX_ENC_TYPE<-as.factor(patients$SEX_ENC_TYPE)
 patients$Insurance_Gap<-as.factor(patients$Insurance_Gap)
 patients$Insurance_Aided<-as.factor(patients$Insurance_Aided)
@@ -24,6 +25,7 @@ patients$Insurance_Aided<-as.factor(patients$Insurance_Aided)
 ```{r}
 
 #### Modeling Chunk
+set.seed(12345)
 
 ### build train data set
 patients_negative<-subset(patients,patients$HCV_STATUS==0)
