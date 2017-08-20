@@ -12,13 +12,34 @@ library(ROSE)
 library(rpart)
 
 
-patients$SEX_ENC_TYPE<-as.factor(patients$SEX_ENC_TYPE)
-patients$Insurance_Gap<-as.factor(patients$Insurance_Gap)
-patients$Insurance_Aided<-as.factor(patients$Insurance_Aided)
+```
+```{r}
 
+#patients <- read_delim("Z:/Flat File/patients_HEDIS_20170816file.csv", ",", escape_double = FALSE, trim_ws = TRUE)
+patients <- read.csv("Z:/Flat File/patients_HEDIS_and_CCS_20170816file.csv", ",", header = TRUE)
+str(patients)
 
+patients <- patients[,-1]
 
+str(patients[,1:75])
+str(patients[,76:129])
+str(patients[,130:171])
+str(patients[,172:200])
+str(patients[,201:460])
 
+patients$PATIENT_ID <-  as.character(patients$PATIENT_ID)
+patients$HCV_STATUS <-  as.numeric(patients$HCV_STATUS)
+patients[8:127] <- sapply(patients[8:127], as.numeric)
+patients[130:171] <- sapply(patients[130:171], as.numeric)
+patients[173:177] <- sapply(patients[173:177], as.numeric)
+patients[179:460] <- sapply(patients[179:460], as.numeric)
+
+patients$Insurance_Gap <- as.factor(patients$Insurance_Gap)
+patients$Insurance_Aided <- as.factor(patients$Insurance_Aided)
+
+names(patients)
+sum(is.na(patients))
+str(patients)
 ```
 
 
@@ -256,8 +277,10 @@ round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
 rose_samp_miscat<-(rose_samp_log[1,2]+rose_samp_log[2,1])/(rose_samp_log[1,2]+rose_samp_log[1,1]+rose_samp_log[2,1]+rose_samp_log[1,2])
 rose_samp_miscat
 
+```
 
 
+```{r}
 #######STOP HERE - BELOW CODE NOT CLEAN############
 
 #tree.rose <- rpart(cls ~ ., data = data.rose)
