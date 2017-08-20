@@ -42,7 +42,13 @@ sum(is.na(patients))
 str(patients)
 ```
 
-
+#Demographic variables = 4-7
+#ICD codes grouped by HEDIS value sets = 8-63
+#CPT codes by HEDIS value sets = 64-122
+#Encounter variables = 123-129
+#ACS variables = 130-171
+#Social variables = 172-179
+#ICD grouped by CCS variables = 180-460
 ```{r}
 
 #### Modeling Chunk
