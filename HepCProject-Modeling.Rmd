@@ -227,16 +227,16 @@ table(test_balanced_over$HCV_STATUS,xp_pred_over)
 round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 
 ##LOGISTIC MODEL ON UNDERSAMPLING TECHNIQUES
-logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
-summary(logistic_model_under)
+#logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
+#summary(logistic_model_under)
 
-xp_bal_under=logistic_model_under$fitted.values
-xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
-UNDER_logloss_pred<-xp_pred_under
-xp_pred_under[xp_pred_under>=0.5]=1
-xp_pred_under[xp_pred_under<0.5]=0
-table(test_balanced_under$HCV_STATUS,xp_pred_under)
-round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+#xp_bal_under=logistic_model_under$fitted.values
+#xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
+#UNDER_logloss_pred<-xp_pred_under
+#xp_pred_under[xp_pred_under>=0.5]=1
+#xp_pred_under[xp_pred_under<0.5]=0
+#table(test_balanced_under$HCV_STATUS,xp_pred_under)
+#round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
 
 ##LOGISTIC MODEL ON BOTH-WAY SAMPLING TECHNIQUES
 logistic_model_both<-glm(HCV_STATUS~. ,data=data_balanced_both, family=binomial(link=logit))
@@ -350,12 +350,12 @@ pred.tree.both <- predict(tree.both, newdata = test_patients_vars_imb)
 ##### START - ROSE holdout calculation##################
 #This package also provide us methods to check the model accuracy using holdout and bagging method. This helps us to ensure that our resultant predictions doesn't suffer from high variance.
 
-ROSE.holdout <- ROSE.eval(cls ~ ., data = hacide.train, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
-ROSE.holdout
+#ROSE.holdout <- ROSE.eval(cls ~ ., data = hacide.train, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
+#ROSE.holdout
 #We see that our accuracy retains at ~ 0.98 and shows that our predictions aren't suffering from high variance. Similarly, you can use bootstrapping by setting method.assess to "BOOT". The parameter extr.pred is a function which extracts the column of probabilities belonging to positive class.
 
-ROSE.holdout <- ROSE.eval(cls ~ ., data = hacide.train, learner = rpart, method.assess = "BOOT", extr.pred = function(obj)obj[,2], seed = 1)
-ROSE.holdout
+#ROSE.holdout <- ROSE.eval(cls ~ ., data = hacide.train, learner = rpart, method.assess = "BOOT", extr.pred = function(obj)obj[,2], seed = 1)
+#ROSE.holdout
 
 ##### END - ROSE holdout calculation##################
 
