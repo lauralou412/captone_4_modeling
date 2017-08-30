@@ -157,7 +157,7 @@ test_patients_vars<-test_patients[,3:ncol(test_patients)]
 data_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "over",N = 300000)$data
 table(data_balanced_over$HCV_STATUS)
 
-test_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "over",N = 100000)$data
+test_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "over",N = 300000)$data
 table(test_balanced_over$HCV_STATUS)
 
 #make the number of items in the samples the same so the data set is balanced
@@ -266,7 +266,6 @@ round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
 
 ```{r}
 
-
 ### METRICS COMPARISON
 library(Metrics)
 #MANUAL SAMPLING MODEL
@@ -276,6 +275,8 @@ sampled_log_miscat<-(sampled_log[1,2]+sampled_log[2,1])/(sampled_log[1,2]+sample
 sampled_log_miscat
 sampled_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), sampled_logloss_pred)
 sampled_logloss
+##extract significant variables and list
+data.frame(summary(sampled_log)$coef[summary(sampled_log)$coef[,4] <= .05, 4])
 
 #OVERSAMPLING MODEL
 over_samp_log<-table(test_balanced_over$HCV_STATUS,xp_pred_over);over_samp_log
@@ -284,7 +285,6 @@ over_samp_miscat<-(over_samp_log[1,2]+over_samp_log[2,1])/(over_samp_log[1,2]+ov
 over_samp_miscat
 OVER_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), OVER_logloss_pred)
 OVER_logloss
-
 
 #UNDERSAMPLING MODEL
 under_samp_log<-table(test_balanced_under$HCV_STATUS,xp_pred_under);under_samp_log
@@ -302,8 +302,6 @@ both_samp_miscat
 BOTH_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), BOTH_logloss_pred)
 BOTH_logloss
 
-
-
 #ROSE SAMPLING MODEL
 rose_samp_log<-table(test.rose$HCV_STATUS,xp_pred_rose);rose_samp_log
 round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
@@ -318,16 +316,101 @@ ROSE_logloss
 
 
 ```{r}
+#REGRESSION TREE MODEL WITH VARIOUS SAMPLING TECHNIQUES
+
+#REGRESSION OVER-SAMPLING
+tree.over <- rpart(HCV_STATUS ~ ., data = data_balanced_over)
+pred.tree.over <- predict(tree.over, newdata = test_balanced_over)
+over_samp_tree<-table(test_balanced_over$HCV_STATUS,pred.tree.over);over_samp_tree
+round(prop.table(table(test_balanced_over$HCV_STATUS,pred.tree.over),1),2)
+both_tree_samp_miscat<-(over_samp_tree[1,2]+over_samp_tree[2,1])/(over_samp_tree[1,2]+over_samp_tree[1,1]+over_samp_tree[2,1]+over_samp_tree[1,2]);both_tree_samp_miscat
+
+## HH still need to get output in terms of probability
+over_tree_logloss<-logLoss(as.numeric(test_balanced_over$HCV_STATUS), pred.tree.over)
+over_tree_logloss
+
+```
+
+
+```{r}
+#REGRESSION TREE MODEL METRICS
+
+#OVERSAMPLING REGRESSIN TREE MODEL METRICS
+pred.tree.over<-pred.tree.over[,2]
+pred.tree.over.logloss<-pred.tree.over
+pred.tree.over[pred.tree.over>=0.5]=1
+pred.tree.over[pred.tree.over<0.5]=0
+table(test_balanced_over$HCV_STATUS,pred.tree.over)
+round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
+OVER_logloss_tree<-logLoss(as.numeric(test_balanced_over$HCV_STATUS), pred.tree.over.logloss)
+OVER_logloss_tree
+
+
+
+
+```
+
+
+
+
+```{r}
+
+#LOGISTIC WITH LASSO
+
+
+#OVERSAMPLING TECHNIQUE FOR LOGISTIC WITH LASSO
+
+train.X<- data.matrix(data_balanced_over[,-1])
+class(train.X)
+train.Y <- data_balanced_over[,1]
+str(train.Y)
+
+test.X<- data.matrix(test_balanced_over[,-1])
+class(test.X)
+test.Y <- test_balanced_over[,1]
+
+library(glmnet)
+lasso.train.over <- glmnet(x=train.X,y=train.Y,family = "binomial", alpha=1,nlambda=100,lambda.min.ratio=.0001,standardize=F)
+
+set.seed(1)
+cv.out <- cv.glmnet(x=train.X,y=train.Y,alpha=1, family="binomial")
+plot(cv.out)
+
+bestlam <- cv.out$lambda.min
+
+lasso.train.pred <- predict(lasso.train.over,s=bestlam,newx=train.X, type = "class")
+#confusion.train.diabetes <- confusionMatrix(lasso.train.pred, train.Y); confusion.train.diabetes
+
+#Predict test Y's using best lambda from the training set model and test dataset X's
+lasso.test.pred <- predict(lasso.train.over,s=bestlam,newx=test.X, type = "class")
+
+lasso.test.prob <- predict(lasso.train.over,s=bestlam,newx=test.X, type = "response")
+
+#Confusion Matrix
+library(caret)
+
+confusion.lasso.over <- confusionMatrix(lasso.test.pred, test.Y)
+confusion.lasso.over
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
 #######STOP HERE - BELOW CODE NOT CLEAN############
 
 #tree.rose <- rpart(cls ~ ., data = data.rose)
-tree.over <- rpart(HCV_STATUS ~ ., data = data_balanced_over)
 tree.under <- rpart(HCV_STATUS ~ ., data = data_balanced_under)
 tree.both <- rpart(HCV_STATUS ~ ., data = data_balanced_both)
 
 #make predictions on unseen data
 #pred.tree.rose <- predict(tree.rose, newdata = hacide.test)
-pred.tree.over <- predict(tree.over, newdata = test_patients_vars_imb)
 pred.tree.under <- predict(tree.under, newdata = test_patients_vars_imb)
 pred.tree.both <- predict(tree.both, newdata = test_patients_vars_imb)
 
@@ -359,6 +442,163 @@ pred.tree.both <- predict(tree.both, newdata = test_patients_vars_imb)
 
 ##### END - ROSE holdout calculation##################
 
+
+
+```
+
+
+```{r}
+##CINDY'S CODE FOR LOGISTIC WITH LASSO
+
+flat.file.diabetes<-read.csv(file=paste(datapath,"flat.file.diabetes.csv",sep="/"))
+str(flat.file.diabetes)
+dim(flat.file.diabetes)
+flat.file.diabetes<- lapply(flat.file.diabetes, as.numeric)
+#flat.file.diabetes <- as.matrix(sapply(flat.file.diabetes, as.numeric))  
+flat.file.diabetes <- as.data.frame(flat.file.diabetes)
+
+train.diabetes <- flat.file.diabetes[1:6648,]
+dim(train.diabetes)
+str(train.diabetes)
+
+test.diabetes <- flat.file.diabetes[6649:9948,]
+dim(test.diabetes)
+str(test.diabetes)
+
+train.X<- data.matrix(train.diabetes[,-1])
+class(train.X)
+train.Y <- train.diabetes[,1]
+str(train.Y)
+
+test.X<- data.matrix(test.diabetes[,-1])
+class(test.X)
+test.Y <- test.diabetes[,1]
+
+library(glmnet)
+lasso.train.diabetes <- glmnet(x=train.X,y=train.Y,family = "binomial", alpha=1,nlambda=100,lambda.min.ratio=.0001,standardize=F)
+
+set.seed(1)
+cv.out <- cv.glmnet(x=train.X,y=train.Y,alpha=1)
+plot(cv.out)
+
+bestlam <- cv.out$lambda.min
+
+lasso.train.pred <- predict(lasso.train.diabetes,s=bestlam,newx=train.X, type = "class")
+confusion.train.diabetes <- confusionMatrix(lasso.train.pred, train.Y); confusion.train.diabetes
+
+#Predict test Y's using best lambda from the training set model and test dataset X's
+lasso.test.pred <- predict(lasso.train.diabetes,s=bestlam,newx=test.X, type = "class")
+
+lasso.test.prob <- predict(lasso.train.diabetes,s=bestlam,newx=test.X, type = "response")
+#To test the accuracy of your algorithm, calculate sensitivity, specificity and the AUC of your forecasting.
+
+#Accuracy: Overall, how often is the classifier correct?
+
+#True Positive Rate: When the person has disease, how often test result is positive?  Sensitivity or Recall
+#(truePositiveRate=TP/Disease)
+
+#Specificity:Given that the person has no disease, how often the test is negative? Same as 1- Fasle Postivie Rate
+#(specificity = TN/Nodisease)
+
+#AUC(Area Under Curve)
+
+#Confusion Matrix
+library(caret)
+
+confusion.lasso.diabetes <- confusionMatrix(lasso.test.pred, test.Y)
+?confusionMatrix
+confusion.lasso.diabetes
+
+#It is a plot of the true positive rate against the false positive rate for the different possible cutpoints of a diagnostic test.
+#library(Deducer)????? cant run this package because of rJava
+
+#roc.lasso <- rocplot(lasso.test.pred, diag=TRUE, AUC=TRUE)
+#rocplot(logistic.model,diag=TRUE,pred.prob.labels=FALSE,prob.label.digits=3,AUC=TRUE)
+
+library(pROC)
+#auc(predictions$survived, predictions$pred) lasso.test.pred, test.Y
+auc(test.Y, lasso.test.prob)
+
+lasso.test.prob <- as.vector(lasso.test.prob)
+    
+roc.lasso <- roc(lasso.test.pred, test.Y)
+plot(roc.lasso, print.auc=TRUE, smooth = TRUE,col = "blue")
+   
+roc.object <- roc(response = test.Y, predictor = lasso.test.prob) 
+lasso.auc<- auc(test.Y, lasso.test.prob); lasso.auc ## Area under the curve: 0.9978 plot(roc.object) 
+lasso.roc <- plot(roc.object, col="red", main = "ROC Curve for Logistic Regression with Lasso")
+
+?auc
+
+library(ROCR)
+
+pred <- prediction(lasso.test.prob, test.Y)
+
+pred2 <- prediction(abs(lasso.test.prob + 
+                            rnorm(length(lasso.test.prob), 0, 0.1)), 
+                    test.Y)
+perf <- performance( pred, "tpr", "fpr" )
+perf2 <- performance(pred2, "tpr", "fpr")
+plot( perf, colorize = TRUE)
+plot(perf2, add = TRUE, colorize = TRUE)
+
+
+x   <- prediction(lasso.test.prob, test.Y)
+ROC <- performance(x, "tpr", "fpr")
+plot(ROC, main = "ROC Curve for Logistic Regression with Lasso", col = "red")
+
+matplot(1:length(lasso.test.prob),lasso.test.prob,pch=1,ylab="Probability",xlab="Index")
+
+
+beta  <- as.vector( t(coef(lasso.train.diabetes,s=bestlam))) 
+beta
+lasso.coef<-predict(lasso.train.diabetes,type="coefficients",s=bestlam)
+lasso.coef
+
+counts.train <- train.diabetes$DMIndicator
+counts.train <- table(train.diabetes$DMIndicator)
+counts.test <- table(test.diabetes$DMIndicator)
+counts.all <- table(counts.train, counts.test)
+counts.train
+counts.test
+counts.all
+sum(flat.file.diabetes$DMIndicator)/nrow(flat.file.diabetes)
+sum(train.diabetes$DMIndicator)
+sum(test.diabetes$DMIndicator)/nrow(test.diabetes)
+sum(train.diabetes$DMIndicator)/nrow(train.diabetes)
+barplot(c(counts.train, counts.test), main = "Number of Patients with and without a Type II Diabetes Diagnosis", 
+            ylab = "Number of Patients", 
+            col = c("green", "red"), 
+            horiz=FALSE, names.arg=c("No", "Yes", "No", "Yes"))
+            
+
+library(plotly)
+p <- plot_ly(
+    x = c("No", "Yes"),
+    y = c(5405, 1243),
+    name = "Train Dataset",
+    colors = c("green", "red"),
+    showlegend = TRUE,
+    type = "bar")
+p
+
+p2 <- add_trace(
+    p,
+    x = c("No", "Yes"),
+    y = c(2639, 661),
+    name = "Test Dataset",
+    colors = c("green", "red"),
+    type = "bar")
+p2
+
+x <- list (title = "Diagnosis")
+y <- list (title = "Number of Patients")
+p3 <- layout(p2, barmode = "stack") %>%
+            layout(xaxis = x, yaxis = y)
+p3
+
+p4 <- layout(p3, title = "Number of Patients in Dataset with and without Type II Diabetes Diagnosis")
+p4
 
 
 ```
