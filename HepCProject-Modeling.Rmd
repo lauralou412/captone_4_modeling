@@ -29,11 +29,12 @@ patients <- read.csv("Z:/Flat File/patients_HEDIS_and_CCS_20170816file.csv", ","
 
 dim(patients)
 
+#remove the index column
 patients <- patients[,-1]
 dim(patients)
 
 
-## bin patients by generation
+## bin patients by generation - add this to the variable creation file
 #patients[,461]<-ifelse(patients$DOB_DS < 1945/01/01, "Silent", ifelse(patients$DOB_DS >= 1945/01/01 & patients$DOB_DS < 1964/01/01,"Baby Boomer", ifelse(patients$DOB_DS >= 1964/01/01 & patients$DOB_DS <1980/01/01, "Gen X",ifelse(patients$DOB_DS >= 1980/01/01, "Millennial", "Unknown"))))
 #names(patients)[461]<-paste("GENERATION_CATEGORY")
 #patients$GENERATION_CATEGORY <- as.factor(patients$GENERATION_CATEGORY)
@@ -56,9 +57,8 @@ patients[8:122] <- sapply(patients[8:122], as.numeric)
 patients$Insurance_Gap <- as.factor(patients$Insurance_Gap)
 patients$Insurance_Aided <- as.factor(patients$Insurance_Aided)
 
-#names(patients)
+#check that there are no na's in the dataset
 sum(is.na(patients))
-#str(patients)
 
 #Demographic variables = 4-7
 #ICD codes grouped by HEDIS value sets = 8-63
@@ -69,7 +69,7 @@ sum(is.na(patients))
 #ICD grouped by CCS variables = 180-460
 
 # leave baselinemodel variables only
-patients<-patients[,c(1:179)]
+patients<-patients[,c(1:129,172:179)]
 dim(patients)
 
 ```
@@ -84,25 +84,28 @@ dim(patients)
 
 
 ```{r}
-##IMBALANCED DATA SETS SAMPLING TECHNIQUES
+##### BUILD SAMPLED DATASETS
 
 set.seed(12345)
 
-
 ### build train data set to use with different sampling techniques
+#separate positive and negative patients into separate tables
 patients_negative_imb<-subset(patients,patients$HCV_STATUS==0)
 patients_positive_imb<-subset(patients,patients$HCV_STATUS==1)
 
+#randomly select 70% of the negative patients for the train set
 train_negative_imb<-sample_frac(patients_negative_imb, 0.7)
 nrow(train_negative_imb)
 
+#randomly select 70% of the positive patients for the train set
 train_positive_imb<-sample_frac(patients_positive_imb, 0.7)
 nrow(train_positive_imb)
 
 ## build test data set
+#select the remainder of the negaive patients that are not part of the training set to be part of the test set
 test_negative_imb<-anti_join(patients_negative_imb,train_negative_imb)
 nrow(test_negative_imb)
-
+#select the rematiner of the positive patients that are not part of the training set to be part of the test set
 test_positive_imb<-anti_join(patients_positive_imb,train_positive_imb)
 nrow(test_positive_imb)
 
@@ -120,25 +123,34 @@ table(train_patients_vars_imb$HCV_STATUS)
 
 #check classes distribution
 prop.table(table(train_patients_vars_imb$HCV_STATUS))
+#The positive patients are less than 1% of the sample
 
 
-##MANUAL SAMPLING
+##IMBALANCED DATA SETS SAMPLING TECHNIQUES
+
+##1. MANUAL SAMPLING
 ### build train data set
+#separate positive and negative patients into two separate tables
 patients_negative<-subset(patients,patients$HCV_STATUS==0)
 patients_positive<-subset(patients,patients$HCV_STATUS==1)
 
+#select 70% of the negative patients to be part of the training set
 train_negative<-sample_frac(patients_negative, 0.7)
 nrow(train_negative)
 
+#select 70% of the positive patients to be part of the training set
 train_positive<-sample_frac(patients_positive, 0.7)
 nrow(train_positive)
+#repeat the positive patients 50 times to balance the imbalanced positives in the sample
 train_positive<-train_positive[rep(1:nrow(train_positive),each=50),] 
 nrow(train_positive)
- 
+
  ## build test data set
+#select the negative patients who are not part of the training set to be part of the testing set
 test_negative<-anti_join(patients_negative,train_negative)
 nrow(test_negative)
 
+#select the positive patients who are not part of the training set to be part of the test set
 test_positive<-anti_join(patients_positive,train_positive)
 nrow(test_positive)
 test_positive<-test_positive[rep(1:nrow(test_positive),each=50),] 
@@ -146,46 +158,56 @@ nrow(test_positive)
 
 ### bind the two tables (positive and negative for test and train)
 train_patients<-rbind(train_negative,train_positive)
-test_patients<-rbind(test_negative,test_positive)
+table(train_patients$HCV_STATUS)
+prop.table(table(train_patients$HCV_STATUS))
 
+test_patients<-rbind(test_negative,test_positive)
+table(test_patients$HCV_STATUS)
+prop.table(table(test_patients$HCV_STATUS))
+
+#remove variables that won't be used in the model
 train_patients_vars<-train_patients[,3:ncol(train_patients)]
 test_patients_vars<-test_patients[,3:ncol(test_patients)]
 
 
+# Use the rose package for different sampling techniques
 
-#OVER-SAMPLING TECHNIQUE
-data_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "over",N = 300000)$data
+#2. OVER-SAMPLING TECHNIQUE
+#oversample the positive patients until the number of entries in the train dataset is 300K
+data_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "over",N = 350000)$data
 table(data_balanced_over$HCV_STATUS)
 
-test_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "over",N = 300000)$data
+#oversample the positive patients until the number of entries in the test dataset is 150K. To maintain 70/30 ratio of train to test
+test_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "over",N = 150000)$data
 table(test_balanced_over$HCV_STATUS)
 
 #make the number of items in the samples the same so the data set is balanced
 
-#In the code above, method over instructs the algorithm to perform over sampling. N refers to number of observations in the resulting balanced set. In this case, originally we had 980 negative observations. So, I instructed this line of code to over sample minority class until it reaches 980 and the total data set comprises of 1960 samples.
-#Similarly, we can perform undersampling as well. Remember, undersampling is done without replacement.
+#In the code above, method over instructs the algorithm to perform over sampling. N refers to number of observations in the resulting balanced set. 
 
-#UNDER-SAMPLING TECHNIQUE
-data_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "under", N = 7000, seed = 1)$data
+#3. UNDER-SAMPLING TECHNIQUE
+#Similarly, we can perform undersampling as well. Remember, undersampling is done without replacement.
+data_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "under", N = 3500, seed = 1)$data
 table(data_balanced_under$HCV_STATUS)
 
-test_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "under", N = 7000, seed = 1)$data
+#To maintain 70/30 ratio of train to test
+test_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "under", N = 1500, seed = 1)$data
 table(test_balanced_under$HCV_STATUS)
 
 
-#Now the data set is balanced. But, you see that we've lost significant information from the sample. Let's do both undersampling and oversampling on this imbalanced data. This can be achieved using method = "both". In this case, the minority class is oversampled with replacement and majority class is undersampled without replacement.
 
-#BOTH UNDER AND OVER-SAMPLE
+#4. BOTH UNDER AND OVER-SAMPLE
+#Now the data set is balanced. But, you see that we've lost significant information from the sample. Let's do both undersampling and oversampling on this imbalanced data. This can be achieved using method = "both". In this case, the minority class is oversampled with replacement and majority class is undersampled without replacement.
 data_balanced_both <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "both", p=0.5,N=100000, seed = 1)$data
 table(data_balanced_both$HCV_STATUS)
 
-test_balanced_both <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "both", p=0.5,N=100000, seed = 1)$data
+#To maintain 70/30 ratio of train to test
+test_balanced_both <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb, method = "both", p=0.5,N=33000, seed = 1)$data
 table(test_balanced_both$HCV_STATUS)
-
 
 #p refers to the probability of positive class in newly generated sample.The data generated from oversampling have expected amount of repeated observations. Data generated from undersampling is deprived of important information from the original data. This leads to inaccuracies in the resulting performance. To encounter these issues, ROSE helps us to generate data synthetically as well. The data generated using ROSE is considered to provide better estimate of original data.
 
-#####START ROSE SAMPLING##########
+#5. START ROSE SAMPLING
 data.rose <- ROSE(HCV_STATUS ~ ., data = train_patients_vars_imb, seed = 1)$data
 table(data.rose$HCV_STATUS)
 
@@ -201,32 +223,37 @@ table(test.rose$HCV_STATUS)
 
 ## LOGISTIC MODELS FOR CUSTOM SAMPLING TECHNIQUES
 
-
-##LOGISTIC MODEL ON MANUAL SAMPLING TECHNIQUES
+##1. LOGISTIC MODEL ON MANUAL SAMPLING TECHNIQUES
 logistic_model<-glm(HCV_STATUS~. ,data=train_patients_vars, family=binomial(link=logit))
 summary(logistic_model)
 
+#predict using the model and test data set
 xp<-predict(logistic_model,newdata=test_patients_vars,type="response")
 sampled_logloss_pred<-xp
+#Use .5 as the threshold probability for whether patient is diagnosed as positive or negative
 xp[xp>=0.5]=1
 xp[xp<0.5]=0
 table(test_patients_vars$HCV_STATUS,xp)
 round(prop.table(table(test_patients_vars$HCV_STATUS,xp),1),2)
 
 
-##LOGISTIC MODEL ON OVERSAMPLING TECHNIQUES
+##2. LOGISTIC MODEL ON OVERSAMPLING TECHNIQUES
 logistic_model_over<-glm(HCV_STATUS~. ,data=data_balanced_over, family=binomial(link=logit))
 summary(logistic_model_over)
 
+#predict using the model and test data set
 xp_bal_over=logistic_model_over$fitted.values
 xp_pred_over<-predict(logistic_model_over,newdata=test_balanced_over,type="response")
 OVER_logloss_pred<-xp_pred_over
+#Use .5 as the threshold probability for whether patient is diagnosed as positive or negative
 xp_pred_over[xp_pred_over>=0.5]=1
 xp_pred_over[xp_pred_over<0.5]=0
 table(test_balanced_over$HCV_STATUS,xp_pred_over)
 round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 
-##LOGISTIC MODEL ON UNDERSAMPLING TECHNIQUES
+##3. LOGISTIC MODEL ON UNDERSAMPLING TECHNIQUES
+#HH - try this sampling technique once the Age category in the patients file has been binned by generation. Does not work now because there are too many categories/bins
+
 #logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
 #summary(logistic_model_under)
 
@@ -238,7 +265,7 @@ round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 #table(test_balanced_under$HCV_STATUS,xp_pred_under)
 #round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
 
-##LOGISTIC MODEL ON BOTH-WAY SAMPLING TECHNIQUES
+##4. LOGISTIC MODEL ON BOTH-WAY SAMPLING TECHNIQUES
 logistic_model_both<-glm(HCV_STATUS~. ,data=data_balanced_both, family=binomial(link=logit))
 summary(logistic_model_both)
 
@@ -249,9 +276,10 @@ xp_pred_both[xp_pred_both<0.5]=0
 table(test_balanced_both$HCV_STATUS,xp_pred_both)
 round(prop.table(table(test_balanced_both$HCV_STATUS,xp_pred_both),1),2)
 
-##LOGISTIC MODEL ON ROSE SAMPLING TECHNIQUES
+##5. LOGISTIC MODEL ON ROSE SAMPLING TECHNIQUES
 logistic_model_rose<-glm(HCV_STATUS~. ,data=data.rose, family=binomial(link=logit))
 summary(logistic_model_rose)
+
 xp_pred_rose<-predict(logistic_model_rose,newdata=test.rose,type="response")
 ROSE_logloss_pred<-xp_pred_rose
 xp_pred_rose[xp_pred_rose>=0.5]=1
@@ -263,71 +291,128 @@ round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
 
 
 
-
 ```{r}
 
-### METRICS COMPARISON
+### METRICS COMPARISON FOR LOGISTIC MODEL
 library(Metrics)
-#MANUAL SAMPLING MODEL
+## HH Add ROC curvse, cohen's kappa, F metrics
+
+
+
+#1. MANUAL SAMPLING MODEL
 sampled_log<-table(test_patients_vars$HCV_STATUS,xp); sampled_log
 round(prop.table(table(test_patients_vars$HCV_STATUS,xp),1),2)
 sampled_log_miscat<-(sampled_log[1,2]+sampled_log[2,1])/(sampled_log[1,2]+sampled_log[1,1]+sampled_log[2,1]+sampled_log[1,2])
 sampled_log_miscat
 sampled_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), sampled_logloss_pred)
 sampled_logloss
+specificity_log = sampled_log[1,1]/(sampled_log[1,1]+sampled_log[2,1]); specificity_log
 ##extract significant variables and list
-data.frame(summary(sampled_log)$coef[summary(sampled_log)$coef[,4] <= .05, 4])
+sampled_log_sig_vars <- summary(logistic_model)$coeff[-1,4] < 0.05 
+# select sig. variables
+sampled_log_sig_vars_names <- names(sampled_log_sig_vars)[sampled_log_sig_vars == TRUE] 
+sampled_log_sig_vars; 
+#the number of significant variables is: 
+length(sampled_log_sig_vars_names)
+#the names of the significant variables
+sampled_log_sig_vars_names
 
-#OVERSAMPLING MODEL
+
+#2. OVERSAMPLING MODEL
 over_samp_log<-table(test_balanced_over$HCV_STATUS,xp_pred_over);over_samp_log
 round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 over_samp_miscat<-(over_samp_log[1,2]+over_samp_log[2,1])/(over_samp_log[1,2]+over_samp_log[1,1]+over_samp_log[2,1]+over_samp_log[1,2])
 over_samp_miscat
 OVER_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), OVER_logloss_pred)
 OVER_logloss
+specificity_OVER = over_samp_log[1,1]/(over_samp_log[1,1]+over_samp_log[2,1]); specificity_OVER
+##extract significant variables and list
+Over_sampled_log_sig_vars <- summary(logistic_model_over)$coeff[-1,4] < 0.05 
+# select sig. variables
+Over_sampled_log_sig_vars_names <- names(Over_sampled_log_sig_vars)[Over_sampled_log_sig_vars == TRUE] 
+Over_sampled_log_sig_vars; 
+#the number of significant variables is: 
+length(Over_sampled_log_sig_vars_names)
+#the names of the significant variables
+sampled_log_sig_vars_names
 
-#UNDERSAMPLING MODEL
-under_samp_log<-table(test_balanced_under$HCV_STATUS,xp_pred_under);under_samp_log
-round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
-under_samp_miscat<-(under_samp_log[1,2]+under_samp_log[2,1])/(under_samp_log[1,2]+under_samp_log[1,1]+under_samp_log[2,1]+under_samp_log[1,2])
-under_samp_miscat
-UNDER_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), UNDER_logloss_pred)
-UNDER_logloss
 
-#BOTH WAY SAMPLING MODEL
+#3. UNDERSAMPLING MODEL
+#HH - try this sampling technique once the Age category in the patients file has been binned by generation. Does not work now because there are too many categories/bins
+
+#under_samp_log<-table(test_balanced_under$HCV_STATUS,xp_pred_under);under_samp_log
+#round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+#under_samp_miscat<-(under_samp_log[1,2]+under_samp_log[2,1])/(under_samp_log[1,2]+under_samp_log[1,1]+under_samp_log[2,1]+under_samp_log[1,2])
+#under_samp_miscat
+#UNDER_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), UNDER_logloss_pred)
+#UNDER_logloss
+
+#4. BOTH WAY SAMPLING MODEL
 both_samp_log<-table(test_balanced_both$HCV_STATUS,xp_pred_both);both_samp_log
 round(prop.table(table(test_balanced_both$HCV_STATUS,xp_pred_both),1),2)
 both_samp_miscat<-(both_samp_log[1,2]+both_samp_log[2,1])/(both_samp_log[1,2]+both_samp_log[1,1]+both_samp_log[2,1]+both_samp_log[1,2])
 both_samp_miscat
 BOTH_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), BOTH_logloss_pred)
 BOTH_logloss
+specificity_BOTH = both_samp_log[1,1]/(both_samp_log[1,1]+both_samp_log[2,1]); specificity_BOTH
+# select sig. variables
+Both_sampled_log_sig_vars_names <- names(Both_sampled_log_sig_vars)[Both_sampled_log_sig_vars == TRUE] 
+Both_sampled_log_sig_vars; 
+#the number of significant variables is: 
+length(Both_sampled_log_sig_vars_names)
+#the names of the significant variables
+Both_sampled_log_sig_vars_names
 
-#ROSE SAMPLING MODEL
+
+#5. ROSE SAMPLING MODEL
 rose_samp_log<-table(test.rose$HCV_STATUS,xp_pred_rose);rose_samp_log
 round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
 rose_samp_miscat<-(rose_samp_log[1,2]+rose_samp_log[2,1])/(rose_samp_log[1,2]+rose_samp_log[1,1]+rose_samp_log[2,1]+rose_samp_log[1,2])
 rose_samp_miscat
 ROSE_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), ROSE_logloss_pred)
 ROSE_logloss
+specificity_ROSE = rose_samp_log[1,1]/(rose_samp_log[1,1]+rose_samp_log[2,1]); specificity_ROSE
 
+##extract significant variables and list
+Rose_sampled_log_sig_vars <- summary(logistic_model_rose)$coeff[-1,4] < 0.05 
+# select sig. variables
+Rose_sampled_log_sig_vars_names <- names(Rose_sampled_log_sig_vars)[Rose_sampled_log_sig_vars == TRUE] 
+Rose_sampled_log_sig_vars; 
+#the number of significant variables is: 
+length(Rose_sampled_log_sig_vars_names)
+#the names of the significant variables
+Rose_sampled_log_sig_vars_names
 
 ```
+
+
 
 
 
 ```{r}
 #REGRESSION TREE MODEL WITH VARIOUS SAMPLING TECHNIQUES
 
-#REGRESSION OVER-SAMPLING
+# 1. MANUAL SAMPLING METHOD WITH REGRESSION TREE MODEL
+tree.man <- rpart(HCV_STATUS ~ ., data = train_patients_vars)
+pred.tree.man <- predict(tree.man, newdata = test_patients_vars)
+
+
+#2. OVER-SAMPLING METHOD WITH REGRESSION TREE MODEL
 tree.over <- rpart(HCV_STATUS ~ ., data = data_balanced_over)
 pred.tree.over <- predict(tree.over, newdata = test_balanced_over)
-over_samp_tree<-table(test_balanced_over$HCV_STATUS,pred.tree.over);over_samp_tree
-round(prop.table(table(test_balanced_over$HCV_STATUS,pred.tree.over),1),2)
-both_tree_samp_miscat<-(over_samp_tree[1,2]+over_samp_tree[2,1])/(over_samp_tree[1,2]+over_samp_tree[1,1]+over_samp_tree[2,1]+over_samp_tree[1,2]);both_tree_samp_miscat
 
-## HH still need to get output in terms of probability
-over_tree_logloss<-logLoss(as.numeric(test_balanced_over$HCV_STATUS), pred.tree.over)
-over_tree_logloss
+#3. UNDER-SAMPLING METHOD WITH REGRESSION TREE MODEL
+
+
+#4. BOTH SAMPOLING METHOD WITH REGREASSION TREE
+tree.both <- rpart(HCV_STATUS ~ ., data = data_balanced_both)
+pred.tree.both <- predict(tree.both, newdata = test_balanced_both)
+
+
+#5. ROSE SAMPLING METHOD WITH REGRESSION TREE
+tree.rose <- rpart(HCV_STATUS ~ ., data = data.rose)
+pred.tree.rose <- predict(tree.rose, newdata = test.rose, type = "prob")
+
 
 ```
 
@@ -335,17 +420,56 @@ over_tree_logloss
 ```{r}
 #REGRESSION TREE MODEL METRICS
 
-#OVERSAMPLING REGRESSIN TREE MODEL METRICS
+#1. MANUAL SAMPLING METHOD WITH REGRESSION TREE MODEL METRICS
+pred.tree.man<-pred.tree.man[,2]
+pred.tree.man.logloss<-pred.tree.man
+pred.tree.man[pred.tree.man>=0.5]=1
+pred.tree.man[pred.tree.man<0.5]=0
+man_samp_tree<-table(test_patients_vars$HCV_STATUS,pred.tree.man)
+round(prop.table(table(test_patients_vars$HCV_STATUS,pred.tree.man),1),2)
+Man_tree_samp_miscat<-(man_samp_tree[1,2]+man_samp_tree[2,1])/(man_samp_tree[1,2]+man_samp_tree[1,1]+man_samp_tree[2,1]+man_samp_tree[1,2]);Man_tree_samp_miscat
+Man_logloss_tree<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), pred.tree.man.logloss)
+Man_logloss_tree
+
+
+#2. OVERSAMPLING REGRESSIN TREE MODEL METRICS
 pred.tree.over<-pred.tree.over[,2]
 pred.tree.over.logloss<-pred.tree.over
 pred.tree.over[pred.tree.over>=0.5]=1
 pred.tree.over[pred.tree.over<0.5]=0
-table(test_balanced_over$HCV_STATUS,pred.tree.over)
-round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
+over_samp_tree<-table(test_balanced_over$HCV_STATUS,pred.tree.over)
+round(prop.table(table(test_balanced_over$HCV_STATUS,pred.tree.over),1),2)
+Over_tree_samp_miscat<-(over_samp_tree[1,2]+over_samp_tree[2,1])/(over_samp_tree[1,2]+over_samp_tree[1,1]+over_samp_tree[2,1]+over_samp_tree[1,2]);Over_tree_samp_miscat
 OVER_logloss_tree<-logLoss(as.numeric(test_balanced_over$HCV_STATUS), pred.tree.over.logloss)
 OVER_logloss_tree
 
 
+#3. UNDER-SAMPLING METHOD WITH REGRESSION TREE MODEL METRICS
+
+
+#4. BOTH SAMPOLING METHOD WITH REGREASSION TREE METRICS
+pred.tree.both<-pred.tree.both[,2]
+pred.tree.both.logloss<-pred.tree.both
+pred.tree.both[pred.tree.both>=0.5]=1
+pred.tree.both[pred.tree.both<0.5]=0
+both_samp_tree<-table(test_balanced_both$HCV_STATUS,pred.tree.both)
+round(prop.table(table(test_balanced_both$HCV_STATUS,pred.tree.both),1),2)
+Both_tree_samp_miscat<-(both_samp_tree[1,2]+both_samp_tree[2,1])/(both_samp_tree[1,2]+both_samp_tree[1,1]+both_samp_tree[2,1]+both_samp_tree[1,2]);Both_tree_samp_miscat
+BOTH_logloss_tree<-logLoss(as.numeric(test_balanced_both$HCV_STATUS), pred.tree.both.logloss)
+BOTH_logloss_tree
+
+
+#5. ROSE SAMPLING METHOD WITH REGRESSION TREE METRICS
+#HH - the rose regression tree is producing predictions of 0/1 only, unlike the other sampling techniquest that produced probabilities. why?
+pred.tree.rose<-pred.tree.rose[,2]
+pred.tree.rose.logloss<-pred.tree.rose
+pred.tree.rose[pred.tree.rose>=0.5]=1
+pred.tree.rose[pred.tree.rose<0.5]=0
+rose_samp_tree<-table(test.rose$HCV_STATUS,pred.tree.rose)
+round(prop.table(table(test.rose$HCV_STATUS,pred.tree.rose),1),2)
+Rose_tree_samp_miscat<-(rose_samp_tree[1,2]+rose_samp_tree[2,1])/(rose_samp_tree[1,2]+rose_samp_tree[1,1]+rose_samp_tree[2,1]+rose_samp_tree[1,2]);Rose_tree_samp_miscat
+ROSE_logloss_tree<-logLoss(as.numeric(test.rose$HCV_STATUS), pred.tree.rose.logloss)
+ROSE_logloss_tree
 
 
 ```
