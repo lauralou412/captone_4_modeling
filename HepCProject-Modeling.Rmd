@@ -10,6 +10,10 @@ output: html_document
 library(dplyr)
 library(ROSE)
 library(rpart)
+library(Metrics)
+library(randomForest)
+suppressWarnings(library(dummies))
+library(Metrics)
 
 
 ```
@@ -410,6 +414,7 @@ pred.tree.both <- predict(tree.both, newdata = test_balanced_both)
 
 
 #5. ROSE SAMPLING METHOD WITH REGRESSION TREE
+###HH - prediction is 1s only. figure out why model is doing that. 
 tree.rose <- rpart(HCV_STATUS ~ ., data = data.rose)
 pred.tree.rose <- predict(tree.rose, newdata = test.rose, type = "prob")
 
@@ -481,7 +486,6 @@ ROSE_logloss_tree
 
 #LOGISTIC WITH LASSO
 
-
 #OVERSAMPLING TECHNIQUE FOR LOGISTIC WITH LASSO
 
 train.X<- data.matrix(data_balanced_over[,-1])
@@ -502,7 +506,7 @@ plot(cv.out)
 
 bestlam <- cv.out$lambda.min
 
-lasso.train.pred <- predict(lasso.train.over,s=bestlam,newx=train.X, type = "class")
+#lasso.train.pred <- predict(lasso.train.over,s=bestlam,newx=train.X, type = "class")
 #confusion.train.diabetes <- confusionMatrix(lasso.train.pred, train.Y); confusion.train.diabetes
 
 #Predict test Y's using best lambda from the training set model and test dataset X's
@@ -520,6 +524,69 @@ confusion.lasso.over
 
 
 
+```{r}
+### RANDOM FOREST ALGORITHM
+
+library(randomForest)
+suppressWarnings(library(dummies))
+library(Metrics)
+
+#3. RANDOM FOREST ALGORITHM FOR UNDER-SAMPLED DATA
+rf_under<-randomForest(HCV_STATUS~.,ntree=20,data = data_balanced_under,importance = TRUE)
+print(rf_under)
+
+importance(rf_under)
+varImpPlot(rf_under,main = "Variable Importance")
+plot(rf_under)
+
+pred.rf.under <- predict(rf_under, test_balanced_under, type="prob")
+head(pred.rf.under)
+
+rf_target_under_IndMat<-dummy.data.frame(data=as.data.frame(test_balanced_under$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
+
+pred.rf.under<-pred.rf.under[,2]
+pred.rf.under.logloss<-pred.rf.under
+pred.rf.under[pred.rf.under>=0.5]=1
+pred.rf.under[pred.rf.under<0.5]=0
+under_samp_rf<-table(test_balanced_under$HCV_STATUS,pred.rf.under)
+round(prop.table(table(test_balanced_under$HCV_STATUS,pred.rf.under),1),2)
+Under_rf_samp_miscat<-(under_samp_rf[1,2]+under_samp_rf[2,1])/(under_samp_rf[1,2]+under_samp_rf[1,1]+under_samp_rf[2,1]+under_samp_rf[1,2]);Under_rf_samp_miscat
+actual_rf.under<-as.numeric(test_balanced_under$HCV_STATUS)
+UNDER_logloss_rf<-logLoss(rf_target_under_IndMat[,2], pred.rf.under.logloss); UNDER_logloss_rf
+
+
+#4. RANDOM FOREST ALGORITHM FOR UNDER-SAMPLED DATA
+rf_both<-randomForest(HCV_STATUS~.,ntree=2,data = data_balanced_both,importance = TRUE)
+print(rf_both)
+
+importance(rf_both)
+varImpPlot(rf_both,main = "Variable Importance")
+plot(rf_both)
+
+pred.rf.both <- predict(rf_both, test_balanced_both, type="prob")
+head(pred.rf.both)
+
+#rf_target_both_IndMat<-dummy.data.frame(data=as.data.frame(test_balanced_both$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
+
+pred.rf.both<-pred.rf.both[,2]
+pred.rf.both.logloss<-pred.rf.both
+pred.rf.both[pred.rf.both>=0.5]=1
+pred.rf.both[pred.rf.both<0.5]=0
+both_samp_rf<-table(test_balanced_both$HCV_STATUS,pred.rf.both)
+round(prop.table(table(test_balanced_both$HCV_STATUS,pred.rf.both),1),2)
+Both_rf_samp_miscat<-(both_samp_rf[1,2]+both_samp_rf[2,1])/(both_samp_rf[1,2]+both_samp_rf[1,1]+both_samp_rf[2,1]+both_samp_rf[1,2]);Both_rf_samp_miscat
+actual_rf.both<-as.numeric(test_balanced_both$HCV_STATUS)
+BOTH_logloss_rf<-logLoss(actual_rf.both, pred.rf.under.logloss); UNDER_logloss_rf
+
+```
+
+
+```{r}
+#GRADIENT BOOSTING ALGORITHM
+
+
+```
+
 
 
 
@@ -529,14 +596,6 @@ confusion.lasso.over
 ```{r}
 #######STOP HERE - BELOW CODE NOT CLEAN############
 
-#tree.rose <- rpart(cls ~ ., data = data.rose)
-tree.under <- rpart(HCV_STATUS ~ ., data = data_balanced_under)
-tree.both <- rpart(HCV_STATUS ~ ., data = data_balanced_both)
-
-#make predictions on unseen data
-#pred.tree.rose <- predict(tree.rose, newdata = hacide.test)
-pred.tree.under <- predict(tree.under, newdata = test_patients_vars_imb)
-pred.tree.both <- predict(tree.both, newdata = test_patients_vars_imb)
 
 #It's time to evaluate the accuracy of respective predictions. Using inbuilt function roc.curve allows us to capture roc metric.
 
