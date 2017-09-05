@@ -13,7 +13,6 @@ library(rpart)
 library(Metrics)
 library(randomForest)
 suppressWarnings(library(dummies))
-library(Metrics)
 
 
 ```
@@ -199,7 +198,6 @@ test_balanced_under <- ovun.sample(HCV_STATUS ~ ., data = test_patients_vars_imb
 table(test_balanced_under$HCV_STATUS)
 
 
-
 #4. BOTH UNDER AND OVER-SAMPLE
 #Now the data set is balanced. But, you see that we've lost significant information from the sample. Let's do both undersampling and oversampling on this imbalanced data. This can be achieved using method = "both". In this case, the minority class is oversampled with replacement and majority class is undersampled without replacement.
 data_balanced_both <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "both", p=0.5,N=100000, seed = 1)$data
@@ -212,9 +210,11 @@ table(test_balanced_both$HCV_STATUS)
 #p refers to the probability of positive class in newly generated sample.The data generated from oversampling have expected amount of repeated observations. Data generated from undersampling is deprived of important information from the original data. This leads to inaccuracies in the resulting performance. To encounter these issues, ROSE helps us to generate data synthetically as well. The data generated using ROSE is considered to provide better estimate of original data.
 
 #5. START ROSE SAMPLING
+#samples so that the number of positive and negative observations is about the same.
 data.rose <- ROSE(HCV_STATUS ~ ., data = train_patients_vars_imb, seed = 1)$data
 table(data.rose$HCV_STATUS)
 
+#the ratio of train/test about 70/30
 test.rose <- ROSE(HCV_STATUS ~ ., data = test_patients_vars_imb, seed = 1)$data
 table(test.rose$HCV_STATUS)
 
@@ -227,11 +227,11 @@ table(test.rose$HCV_STATUS)
 
 ## LOGISTIC MODELS FOR CUSTOM SAMPLING TECHNIQUES
 
-##1. LOGISTIC MODEL ON MANUAL SAMPLING TECHNIQUES
+##1. LOGISTIC MODEL ON MANUAL SAMPLING TECHNIQUE
 logistic_model<-glm(HCV_STATUS~. ,data=train_patients_vars, family=binomial(link=logit))
 summary(logistic_model)
 
-#predict using the model and test data set
+#predict using the model betas and test data set
 xp<-predict(logistic_model,newdata=test_patients_vars,type="response")
 sampled_logloss_pred<-xp
 #Use .5 as the threshold probability for whether patient is diagnosed as positive or negative
@@ -240,12 +240,11 @@ xp[xp<0.5]=0
 table(test_patients_vars$HCV_STATUS,xp)
 round(prop.table(table(test_patients_vars$HCV_STATUS,xp),1),2)
 
-
 ##2. LOGISTIC MODEL ON OVERSAMPLING TECHNIQUES
 logistic_model_over<-glm(HCV_STATUS~. ,data=data_balanced_over, family=binomial(link=logit))
 summary(logistic_model_over)
 
-#predict using the model and test data set
+#predict using the model betas and test data set
 xp_bal_over=logistic_model_over$fitted.values
 xp_pred_over<-predict(logistic_model_over,newdata=test_balanced_over,type="response")
 OVER_logloss_pred<-xp_pred_over
@@ -273,8 +272,10 @@ round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 logistic_model_both<-glm(HCV_STATUS~. ,data=data_balanced_both, family=binomial(link=logit))
 summary(logistic_model_both)
 
+#predict using the model betas and test data set
 xp_pred_both<-predict(logistic_model_both,newdata=test_balanced_both,type="response")
 BOTH_logloss_pred<-xp_pred_both
+#Use .5 as the threshold probability for whether patient is diagnosed as positive or negative
 xp_pred_both[xp_pred_both>=0.5]=1
 xp_pred_both[xp_pred_both<0.5]=0
 table(test_balanced_both$HCV_STATUS,xp_pred_both)
@@ -283,9 +284,10 @@ round(prop.table(table(test_balanced_both$HCV_STATUS,xp_pred_both),1),2)
 ##5. LOGISTIC MODEL ON ROSE SAMPLING TECHNIQUES
 logistic_model_rose<-glm(HCV_STATUS~. ,data=data.rose, family=binomial(link=logit))
 summary(logistic_model_rose)
-
+#predict using the model betas and test data set
 xp_pred_rose<-predict(logistic_model_rose,newdata=test.rose,type="response")
 ROSE_logloss_pred<-xp_pred_rose
+#Use .5 as the threshold probability for whether patient is diagnosed as positive or negative
 xp_pred_rose[xp_pred_rose>=0.5]=1
 xp_pred_rose[xp_pred_rose<0.5]=0
 table(test.rose$HCV_STATUS,xp_pred_rose)
@@ -299,46 +301,52 @@ round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
 
 ### METRICS COMPARISON FOR LOGISTIC MODEL
 library(Metrics)
-## HH Add ROC curvse, cohen's kappa, F metrics
-
+## HH Add ROC curve, cohen's kappa, F metrics
 
 
 #1. MANUAL SAMPLING MODEL
+#1.1 display confusion matrix
 sampled_log<-table(test_patients_vars$HCV_STATUS,xp); sampled_log
 round(prop.table(table(test_patients_vars$HCV_STATUS,xp),1),2)
-sampled_log_miscat<-(sampled_log[1,2]+sampled_log[2,1])/(sampled_log[1,2]+sampled_log[1,1]+sampled_log[2,1]+sampled_log[1,2])
-sampled_log_miscat
-sampled_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), sampled_logloss_pred)
-sampled_logloss
+#1.2 calculate mis-categorization rate
+sampled_log_miscat<-(sampled_log[1,2]+sampled_log[2,1])/(sampled_log[1,2]+sampled_log[1,1]+sampled_log[2,1]+sampled_log[1,2]); sampled_log_miscat
+#1.3 calculate logloss
+sampled_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), sampled_logloss_pred); sampled_logloss
+#1.4 calculate specificity
 specificity_log = sampled_log[1,1]/(sampled_log[1,1]+sampled_log[2,1]); specificity_log
 ##extract significant variables and list
 sampled_log_sig_vars <- summary(logistic_model)$coeff[-1,4] < 0.05 
 # select sig. variables
 sampled_log_sig_vars_names <- names(sampled_log_sig_vars)[sampled_log_sig_vars == TRUE] 
 sampled_log_sig_vars; 
-#the number of significant variables is: 
-length(sampled_log_sig_vars_names)
 #the names of the significant variables
 sampled_log_sig_vars_names
+#the number of significant variables is: 
+length(sampled_log_sig_vars_names)
+
 
 
 #2. OVERSAMPLING MODEL
+#2.1 display confusion matrix
 over_samp_log<-table(test_balanced_over$HCV_STATUS,xp_pred_over);over_samp_log
 round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
+#2.2 calculate mis-categorization rate
 over_samp_miscat<-(over_samp_log[1,2]+over_samp_log[2,1])/(over_samp_log[1,2]+over_samp_log[1,1]+over_samp_log[2,1]+over_samp_log[1,2])
 over_samp_miscat
+#2.3 calculate logloss
 OVER_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), OVER_logloss_pred)
 OVER_logloss
+#2.4 calculate specificity
 specificity_OVER = over_samp_log[1,1]/(over_samp_log[1,1]+over_samp_log[2,1]); specificity_OVER
 ##extract significant variables and list
 Over_sampled_log_sig_vars <- summary(logistic_model_over)$coeff[-1,4] < 0.05 
 # select sig. variables
 Over_sampled_log_sig_vars_names <- names(Over_sampled_log_sig_vars)[Over_sampled_log_sig_vars == TRUE] 
 Over_sampled_log_sig_vars; 
+#the names of the significant variables
+Over_sampled_log_sig_vars_names
 #the number of significant variables is: 
 length(Over_sampled_log_sig_vars_names)
-#the names of the significant variables
-sampled_log_sig_vars_names
 
 
 #3. UNDERSAMPLING MODEL
@@ -359,13 +367,15 @@ both_samp_miscat
 BOTH_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), BOTH_logloss_pred)
 BOTH_logloss
 specificity_BOTH = both_samp_log[1,1]/(both_samp_log[1,1]+both_samp_log[2,1]); specificity_BOTH
+##extract significant variables and list
+Both_sampled_log_sig_vars <- summary(logistic_model_both)$coeff[-1,4] < 0.05 
 # select sig. variables
 Both_sampled_log_sig_vars_names <- names(Both_sampled_log_sig_vars)[Both_sampled_log_sig_vars == TRUE] 
 Both_sampled_log_sig_vars; 
-#the number of significant variables is: 
-length(Both_sampled_log_sig_vars_names)
 #the names of the significant variables
 Both_sampled_log_sig_vars_names
+#the number of significant variables is: 
+length(Both_sampled_log_sig_vars_names)
 
 
 #5. ROSE SAMPLING MODEL
@@ -376,7 +386,6 @@ rose_samp_miscat
 ROSE_logloss<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), ROSE_logloss_pred)
 ROSE_logloss
 specificity_ROSE = rose_samp_log[1,1]/(rose_samp_log[1,1]+rose_samp_log[2,1]); specificity_ROSE
-
 ##extract significant variables and list
 Rose_sampled_log_sig_vars <- summary(logistic_model_rose)$coeff[-1,4] < 0.05 
 # select sig. variables
@@ -388,8 +397,6 @@ length(Rose_sampled_log_sig_vars_names)
 Rose_sampled_log_sig_vars_names
 
 ```
-
-
 
 
 
@@ -408,7 +415,7 @@ pred.tree.over <- predict(tree.over, newdata = test_balanced_over)
 #3. UNDER-SAMPLING METHOD WITH REGRESSION TREE MODEL
 
 
-#4. BOTH SAMPOLING METHOD WITH REGREASSION TREE
+#4. BOTH SAMPLING METHOD WITH REGREASSION TREE
 tree.both <- rpart(HCV_STATUS ~ ., data = data_balanced_both)
 pred.tree.both <- predict(tree.both, newdata = test_balanced_both)
 
@@ -428,25 +435,51 @@ pred.tree.rose <- predict(tree.rose, newdata = test.rose, type = "prob")
 #1. MANUAL SAMPLING METHOD WITH REGRESSION TREE MODEL METRICS
 pred.tree.man<-pred.tree.man[,2]
 pred.tree.man.logloss<-pred.tree.man
+#use .5 as the cutoff for predicting 1
 pred.tree.man[pred.tree.man>=0.5]=1
 pred.tree.man[pred.tree.man<0.5]=0
-man_samp_tree<-table(test_patients_vars$HCV_STATUS,pred.tree.man)
+#confusion matrix
+man_samp_tree<-table(test_patients_vars$HCV_STATUS,pred.tree.man); man_samp_tree
+#proportional confusion matrix
 round(prop.table(table(test_patients_vars$HCV_STATUS,pred.tree.man),1),2)
+#miscategorization rate
 Man_tree_samp_miscat<-(man_samp_tree[1,2]+man_samp_tree[2,1])/(man_samp_tree[1,2]+man_samp_tree[1,1]+man_samp_tree[2,1]+man_samp_tree[1,2]);Man_tree_samp_miscat
-Man_logloss_tree<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), pred.tree.man.logloss)
-Man_logloss_tree
+#logloss
+Man_logloss_tree<-logLoss(as.numeric(test_patients_vars$HCV_STATUS), pred.tree.man.logloss); Man_logloss_tree
+##extract significant variables and list
+Man_pred_tree_vars <- summary(logistic_model_rose)$coeff[-1,4] < 0.05 
+# select sig. variables
+Man_pred_tree_vars_names <- names(Man_pred_tree_vars)[Man_pred_tree_vars == TRUE] 
+Man_pred_tree_vars_names; 
+#the number of significant variables is: 
+length(Man_pred_tree_vars_names)
+#the names of the significant variables
+Man_pred_tree_vars_names
 
 
 #2. OVERSAMPLING REGRESSIN TREE MODEL METRICS
 pred.tree.over<-pred.tree.over[,2]
 pred.tree.over.logloss<-pred.tree.over
+#use .5 as the cutoff for predicting 1
 pred.tree.over[pred.tree.over>=0.5]=1
 pred.tree.over[pred.tree.over<0.5]=0
-over_samp_tree<-table(test_balanced_over$HCV_STATUS,pred.tree.over)
+#confusion matrix
+over_samp_tree<-table(test_balanced_over$HCV_STATUS,pred.tree.over);over_samp_tree
+#proportional confusion matrix
 round(prop.table(table(test_balanced_over$HCV_STATUS,pred.tree.over),1),2)
+#miscategorization rate
 Over_tree_samp_miscat<-(over_samp_tree[1,2]+over_samp_tree[2,1])/(over_samp_tree[1,2]+over_samp_tree[1,1]+over_samp_tree[2,1]+over_samp_tree[1,2]);Over_tree_samp_miscat
+#logloss
 OVER_logloss_tree<-logLoss(as.numeric(test_balanced_over$HCV_STATUS), pred.tree.over.logloss)
 OVER_logloss_tree
+##extract significant variables and list
+Over_pred_tree_vars <- summary(logistic_model_over)$coeff[-1,4] < 0.05 
+# select sig. variables
+Over_pred_tree_vars_names <- names(Over_pred_tree_vars)[Over_pred_tree_vars == TRUE] 
+Over_pred_tree_vars_names; 
+#the number of significant variables is: 
+length(Over_pred_tree_vars_names)
+
 
 
 #3. UNDER-SAMPLING METHOD WITH REGRESSION TREE MODEL METRICS
@@ -455,38 +488,54 @@ OVER_logloss_tree
 #4. BOTH SAMPOLING METHOD WITH REGREASSION TREE METRICS
 pred.tree.both<-pred.tree.both[,2]
 pred.tree.both.logloss<-pred.tree.both
+#use .5 as the cutoff for predicting 1
 pred.tree.both[pred.tree.both>=0.5]=1
 pred.tree.both[pred.tree.both<0.5]=0
-both_samp_tree<-table(test_balanced_both$HCV_STATUS,pred.tree.both)
+#confusion matrix
+both_samp_tree<-table(test_balanced_both$HCV_STATUS,pred.tree.both);both_samp_tree
+#proportional confusion matrix
 round(prop.table(table(test_balanced_both$HCV_STATUS,pred.tree.both),1),2)
+#miscategorization rate
 Both_tree_samp_miscat<-(both_samp_tree[1,2]+both_samp_tree[2,1])/(both_samp_tree[1,2]+both_samp_tree[1,1]+both_samp_tree[2,1]+both_samp_tree[1,2]);Both_tree_samp_miscat
+#logloss
 BOTH_logloss_tree<-logLoss(as.numeric(test_balanced_both$HCV_STATUS), pred.tree.both.logloss)
 BOTH_logloss_tree
+##extract significant variables and list
+Both_pred_tree_vars <- summary(logistic_model_both)$coeff[-1,4] < 0.05 
+# select sig. variables
+Both_pred_tree_vars_names <- names(Both_pred_tree_vars)[Both_pred_tree_vars == TRUE] 
+Both_pred_tree_vars_names; 
+#the number of significant variables is: 
+length(Both_pred_tree_vars_names)
 
 
 #5. ROSE SAMPLING METHOD WITH REGRESSION TREE METRICS
 #HH - the rose regression tree is producing predictions of 0/1 only, unlike the other sampling techniquest that produced probabilities. why?
 pred.tree.rose<-pred.tree.rose[,2]
 pred.tree.rose.logloss<-pred.tree.rose
+#use .5 as the cutoff for predicting 1
 pred.tree.rose[pred.tree.rose>=0.5]=1
 pred.tree.rose[pred.tree.rose<0.5]=0
+#confusion matrix
 rose_samp_tree<-table(test.rose$HCV_STATUS,pred.tree.rose)
+#proportional confusion matrix
 round(prop.table(table(test.rose$HCV_STATUS,pred.tree.rose),1),2)
+#miscategorization rate
 Rose_tree_samp_miscat<-(rose_samp_tree[1,2]+rose_samp_tree[2,1])/(rose_samp_tree[1,2]+rose_samp_tree[1,1]+rose_samp_tree[2,1]+rose_samp_tree[1,2]);Rose_tree_samp_miscat
+#logloss
 ROSE_logloss_tree<-logLoss(as.numeric(test.rose$HCV_STATUS), pred.tree.rose.logloss)
 ROSE_logloss_tree
-
 
 ```
 
 
 
-
 ```{r}
 
-#LOGISTIC WITH LASSO
+#LOGISTIC WITH LASSO - NOT WORKING
+#HH - model only predicting o's, look at setup
 
-#OVERSAMPLING TECHNIQUE FOR LOGISTIC WITH LASSO
+#2. OVERSAMPLING TECHNIQUE FOR LOGISTIC WITH LASSO
 
 train.X<- data.matrix(data_balanced_over[,-1])
 class(train.X)
@@ -532,63 +581,132 @@ suppressWarnings(library(dummies))
 library(Metrics)
 
 #3. RANDOM FOREST ALGORITHM FOR UNDER-SAMPLED DATA
+##HH -  increase the number of trees
 rf_under<-randomForest(HCV_STATUS~.,ntree=20,data = data_balanced_under,importance = TRUE)
 print(rf_under)
 
+#list variables with importance
 importance(rf_under)
+#plot variables by importance
 varImpPlot(rf_under,main = "Variable Importance")
+#plot error decrease with increase in number of trees
 plot(rf_under)
 
+#predict on the test dataset using the model 
 pred.rf.under <- predict(rf_under, test_balanced_under, type="prob")
 head(pred.rf.under)
 
-rf_target_under_IndMat<-dummy.data.frame(data=as.data.frame(test_balanced_under$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
+#convert prediction into dummy variable
+#rf_target_under_IndMat<-dummy.data.frame(data=as.data.frame(test_balanced_under$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
 
 pred.rf.under<-pred.rf.under[,2]
 pred.rf.under.logloss<-pred.rf.under
+#use .5 as cutoff for categorization
 pred.rf.under[pred.rf.under>=0.5]=1
 pred.rf.under[pred.rf.under<0.5]=0
-under_samp_rf<-table(test_balanced_under$HCV_STATUS,pred.rf.under)
+#confusion matrix
+under_samp_rf<-table(test_balanced_under$HCV_STATUS,pred.rf.under);under_samp_rf
+#confusion proportion table
 round(prop.table(table(test_balanced_under$HCV_STATUS,pred.rf.under),1),2)
+#miscategorization rate
 Under_rf_samp_miscat<-(under_samp_rf[1,2]+under_samp_rf[2,1])/(under_samp_rf[1,2]+under_samp_rf[1,1]+under_samp_rf[2,1]+under_samp_rf[1,2]);Under_rf_samp_miscat
-actual_rf.under<-as.numeric(test_balanced_under$HCV_STATUS)
-UNDER_logloss_rf<-logLoss(rf_target_under_IndMat[,2], pred.rf.under.logloss); UNDER_logloss_rf
 
-
-#4. RANDOM FOREST ALGORITHM FOR UNDER-SAMPLED DATA
-rf_both<-randomForest(HCV_STATUS~.,ntree=2,data = data_balanced_both,importance = TRUE)
-print(rf_both)
-
-importance(rf_both)
-varImpPlot(rf_both,main = "Variable Importance")
-plot(rf_both)
-
-pred.rf.both <- predict(rf_both, test_balanced_both, type="prob")
-head(pred.rf.both)
-
-#rf_target_both_IndMat<-dummy.data.frame(data=as.data.frame(test_balanced_both$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
-
-pred.rf.both<-pred.rf.both[,2]
-pred.rf.both.logloss<-pred.rf.both
-pred.rf.both[pred.rf.both>=0.5]=1
-pred.rf.both[pred.rf.both<0.5]=0
-both_samp_rf<-table(test_balanced_both$HCV_STATUS,pred.rf.both)
-round(prop.table(table(test_balanced_both$HCV_STATUS,pred.rf.both),1),2)
-Both_rf_samp_miscat<-(both_samp_rf[1,2]+both_samp_rf[2,1])/(both_samp_rf[1,2]+both_samp_rf[1,1]+both_samp_rf[2,1]+both_samp_rf[1,2]);Both_rf_samp_miscat
-actual_rf.both<-as.numeric(test_balanced_both$HCV_STATUS)
-BOTH_logloss_rf<-logLoss(actual_rf.both, pred.rf.under.logloss); UNDER_logloss_rf
+#calculation logloss
+#HH-Cannot get this to produce a logloss rate. Will work on it
+UNDER_logloss_rf<-logLoss(test_balanced_under$HCV_STATUS, pred.rf.under.logloss); UNDER_logloss_rf
+logLoss(prediction, iris$Species)
 
 ```
 
 
 ```{r}
 #GRADIENT BOOSTING ALGORITHM
+#HH - xgboost not working on this version of R; using gbm instead
+
+suppressWarnings(library(gbm))
+suppressWarnings(library(caret))
+suppressWarnings(library(kernlab))
+suppressWarnings(library(ROCR))
+
+#3. Gradient boosting algorithm for under-sampled data
+train<-data_balanced_under
+  
+feature.names=names(train)
+
+for (f in feature.names) {
+  if (class(train[[f]])=="factor") {
+    levels <- unique(c(train[[f]]))
+    train[[f]] <- factor(train[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+trainX<-train[,c(-1)]
+trainY<-train[,1]
+ctrl <- trainControl(method = "cv", number = 5, classProbs =  TRUE)
+
+gbmGrid <- data.frame(n.trees = 20, interaction.depth = 5,
+                       shrinkage = .1,n.minobsinnode=2)
+gbmFitIso <- train(trainX,trainY,
+                   method = "gbm", tuneGrid = gbmGrid, 
+                   trControl = ctrl,verbose=F)
+
+print(gbmFitIso)
+
+
+test<-test_balanced_under
+  
+feature.names=names(test)
+
+for (f in feature.names) {
+  if (class(test[[f]])=="factor") {
+    levels <- unique(c(test[[f]]))
+    test[[f]] <- factor(test[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+testX<-test[,c(-1)]
+testY<-test[,1]
+
+table(predict(gbmFitIso, testX,type='raw'), testY)
 
 
 ```
 
 
+```{r}
 
+#######STOP HERE - BELOW CODE NOT CLEAN############
+
+#SUPPORT VECTOR MACHINE - NOT YET WORKING
+suppressWarnings(library(caret))
+suppressWarnings(library(kernlab))
+suppressWarnings(library(ROCR))
+
+#Demographic variables = 4-7
+#ICD codes grouped by HEDIS value sets = 8-63
+#CPT codes by HEDIS value sets = 64-122
+#Encounter variables = 123-129
+#ACS variables = 130-171
+#Social variables = 172-179
+#ICD grouped by CCS variables = 180-460
+
+
+#2. UNDER-SAMPLING FOR SVM
+trainX<-data_balanced_both[,c(2:5)]
+trainY<-data_balanced_both[,1]
+
+set.seed(0)
+ctrl <- trainControl(method = "cv", number = 5, classProbs =  TRUE)
+svmFitIso <- train(trainX,trainY,
+                  method = "svmRadial",
+                  tuneGrid = data.frame(.C = c(1,2,4,8,16),.sigma = .001), 
+                  trControl = ctrl,
+                  preProc = c("center", "scale"))
+
+
+```
 
 
 
