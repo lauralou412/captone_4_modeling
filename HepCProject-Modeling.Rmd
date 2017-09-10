@@ -1,5 +1,5 @@
 ---
-title: "capstone_variablecreation"
+title: "capstone_modeling"
 author: "Laura Olson"
 date: "May 20, 2017"
 output: html_document
