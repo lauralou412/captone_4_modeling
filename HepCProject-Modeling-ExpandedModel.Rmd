@@ -87,6 +87,47 @@ dim(patients)
 
 
 ```{r}
+  #Patient variables = 1-5
+  #Demographic variables = 6-12
+  #Freq HEDIS ICD codes = 13- 68
+  #Average HEDIS ICD codes = 69 - 124
+  #Binary HEDIS ICD codes = 125 - 180
+  #Average CCS ICD codes = 181 - 461
+  #Binary CCS ICD codes = 462 - 741
+  #Freq HEDIS PROC codes = 742 - 800
+  #Average HEDIS PROC codes = 801 - 859
+  #Binary HEDIS PROC codes = 860 - 918
+  #Totals and Averages on Encounter Type = 919 - 980
+  #Insurance = 981 - 982
+  #ACS data = 983 - 1024
+  #Social = 1025 - 1032
+  #Meds = 1033 - 1079
+
+
+###Import and format columns
+flat_file <- read.csv("Z:/Flat File/patients_all_variables_09-07-2017.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+
+
+flat_file$PATIENT_ID <- as.character(flat_file$PATIENT_ID)
+flat_file[,2:3] <- lapply(flat_file[,2:3], as.Date)
+flat_file$HCV_STATUS <- as.numeric(flat_file$HCV_STATUS)
+flat_file[,6:12] <- lapply(flat_file[,6:12], as.factor)
+flat_file[,13:980] <- lapply(flat_file[,13:980], as.numeric)
+flat_file[,981:982] <- lapply(flat_file[,981:982], as.factor)
+flat_file[,983:1024] <- lapply(flat_file[,983:1024], as.numeric)
+flat_file$TOBACCO_USER_STATUS_DER <- as.factor(flat_file$TOBACCO_USER_STATUS_DER)
+flat_file[,1026:1030] <- lapply(flat_file[,1026:1030], as.numeric)
+flat_file$SEX_ENC_TYPE  <- as.factor(flat_file$SEX_ENC_TYPE )
+flat_file[,1032:1079] <- lapply(flat_file[,1032:1079], as.numeric)
+sum(is.na(flat_file))   
+
+
+model_variables <- flat_file[c(5:12, 69:124, 181:461, 801:859, 920, 922, 924, 925, 927, 929:1079)]
+str(model_variables[,75:132])
+names(model_variables)
+```
+
+```{r}
 ##### BUILD SAMPLED DATASETS
 
 set.seed(12345)
