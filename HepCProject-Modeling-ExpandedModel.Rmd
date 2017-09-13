@@ -123,8 +123,8 @@ sum(is.na(flat_file))
 
 
 model_variables <- flat_file[c(5:12, 69:124, 181:461, 801:859, 920, 922, 924, 925, 927, 929:1079)]
-str(model_variables[,75:132])
-names(model_variables)
+dim(reduced_model_variables)
+patients <- reduced_model_variables
 ```
 
 ```{r}
@@ -157,8 +157,8 @@ nrow(test_positive_imb)
 train_patients_imb<-rbind(train_negative_imb,train_positive_imb)
 test_patients_imb<-rbind(test_negative_imb,test_positive_imb)
 
-train_patients_vars_imb<-train_patients_imb[,3:ncol(train_patients_imb)]
-test_patients_vars_imb<-test_patients_imb[,3:ncol(test_patients_imb)]
+train_patients_vars_imb<-train_patients_imb[,1:ncol(train_patients_imb)]
+test_patients_vars_imb<-test_patients_imb[,1:ncol(test_patients_imb)]
 
 dim(train_patients_vars_imb)
 
@@ -210,8 +210,8 @@ table(test_patients$HCV_STATUS)
 prop.table(table(test_patients$HCV_STATUS))
 
 #remove variables that won't be used in the model
-train_patients_vars<-train_patients[,3:ncol(train_patients)]
-test_patients_vars<-test_patients[,3:ncol(test_patients)]
+train_patients_vars<-train_patients[,1:ncol(train_patients)]
+test_patients_vars<-test_patients[,1:ncol(test_patients)]
 
 
 # Use the rose package for different sampling techniques
@@ -298,16 +298,16 @@ round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 ##3. LOGISTIC MODEL ON UNDERSAMPLING TECHNIQUES
 #HH - try this sampling technique once the Age category in the patients file has been binned by generation. Does not work now because there are too many categories/bins
 
-#logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
-#summary(logistic_model_under)
+logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
+summary(logistic_model_under)
 
-#xp_bal_under=logistic_model_under$fitted.values
-#xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
-#UNDER_logloss_pred<-xp_pred_under
-#xp_pred_under[xp_pred_under>=0.5]=1
-#xp_pred_under[xp_pred_under<0.5]=0
-#table(test_balanced_under$HCV_STATUS,xp_pred_under)
-#round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+xp_bal_under=logistic_model_under$fitted.values
+xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
+UNDER_logloss_pred<-xp_pred_under
+xp_pred_under[xp_pred_under>=0.5]=1
+xp_pred_under[xp_pred_under<0.5]=0
+table(test_balanced_under$HCV_STATUS,xp_pred_under)
+round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
 
 ##4. LOGISTIC MODEL ON BOTH-WAY SAMPLING TECHNIQUES
 logistic_model_both<-glm(HCV_STATUS~. ,data=data_balanced_both, family=binomial(link=logit))
