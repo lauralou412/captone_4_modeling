@@ -12,7 +12,9 @@ library(ROSE)
 library(rpart)
 library(Metrics)
 library(randomForest)
+library(lift)
 suppressWarnings(library(dummies))
+setwd("Z:/Model Output")
 
 
 ```
@@ -124,7 +126,7 @@ sum(is.na(flat_file))
 
 model_variables <- flat_file[c(5:12, 69:124, 181:461, 801:859, 920, 922, 924, 925, 927, 929:1079)]
 dim(reduced_model_variables)
-patients <- reduced_model_variables
+patients <- model_variables
 ```
 
 ```{r}
@@ -149,7 +151,7 @@ nrow(train_positive_imb)
 #select the remainder of the negaive patients that are not part of the training set to be part of the test set
 test_negative_imb<-anti_join(patients_negative_imb,train_negative_imb)
 nrow(test_negative_imb)
-#select the rematiner of the positive patients that are not part of the training set to be part of the test set
+#select the remainder of the positive patients that are not part of the training set to be part of the test set
 test_positive_imb<-anti_join(patients_positive_imb,train_positive_imb)
 nrow(test_positive_imb)
 
@@ -217,7 +219,7 @@ test_patients_vars<-test_patients[,1:ncol(test_patients)]
 # Use the rose package for different sampling techniques
 
 #2. OVER-SAMPLING TECHNIQUE
-#oversample the positive patients until the number of entries in the train dataset is 300K
+#oversample the positive patients until the number of entries in the train dataset is 350K
 data_balanced_over <- ovun.sample(HCV_STATUS ~ ., data = train_patients_vars_imb, method = "over",N = 350000)$data
 table(data_balanced_over$HCV_STATUS)
 
@@ -526,7 +528,7 @@ length(Over_pred_tree_vars_names)
 #3. UNDER-SAMPLING METHOD WITH REGRESSION TREE MODEL METRICS
 
 
-#4. BOTH SAMPOLING METHOD WITH REGREASSION TREE METRICS
+#4. BOTH SAMPOLING METHOD WITH REGRESSION TREE METRICS
 pred.tree.both<-pred.tree.both[,2]
 pred.tree.both.logloss<-pred.tree.both
 #use .5 as the cutoff for predicting 1
@@ -622,9 +624,11 @@ suppressWarnings(library(dummies))
 library(Metrics)
 
 #3. RANDOM FOREST ALGORITHM FOR UNDER-SAMPLED DATA
-##HH -  increase the number of trees
-rf_under<-randomForest(HCV_STATUS~.,ntree=20,data = data_balanced_under,importance = TRUE)
+
+data_balanced_under$HCV_STATUS <- as.factor(data_balanced_under$HCV_STATUS)
+rf_under<-randomForest(HCV_STATUS~.,ntree=100,data = data_balanced_under,importance = TRUE)
 print(rf_under)
+save(rf_under, file =  "rf_under.RData")
 
 #list variables with importance
 importance(rf_under)
@@ -632,6 +636,8 @@ importance(rf_under)
 varImpPlot(rf_under,main = "Variable Importance")
 #plot error decrease with increase in number of trees
 plot(rf_under)
+
+str(rf_under)
 
 #predict on the test dataset using the model 
 pred.rf.under <- predict(rf_under, test_balanced_under, type="prob")
@@ -655,7 +661,142 @@ Under_rf_samp_miscat<-(under_samp_rf[1,2]+under_samp_rf[2,1])/(under_samp_rf[1,2
 #calculation logloss
 #HH-Cannot get this to produce a logloss rate. Will work on it
 UNDER_logloss_rf<-logLoss(test_balanced_under$HCV_STATUS, pred.rf.under.logloss); UNDER_logloss_rf
-logLoss(prediction, iris$Species)
+
+#depict directionality of the variables
+dir_imp<-importance(rf_under)[,3]
+dir_imp<-sort(dir_imp, decreasing = TRUE)
+
+#graph the directionality of the first 20 variables
+i=1
+while (i<21) {
+  var_name<-names(dir_imp[i])
+  partialPlot(rf_under,data.rose, names(dir_imp[i]),main=var_name)
+    i=i+1
+    }
+
+#plot lift chart
+plotLift(pred.rf.rose, test.rose$HCV_STATUS, cumulative = TRUE, n.buckets = 100)
+
+
+#RANDOM FOREST ALGORITHM FOR MANUALLY SAMPLED DATA
+train_patients_vars$HCV_STATUS <- as.factor(train_patients_vars$HCV_STATUS)
+rf_manual<-randomForest(HCV_STATUS~.,ntree=100,data = train_patients_vars,importance = TRUE)
+print(rf_manual)
+
+#list variables with importance
+importance(rf_manual)
+#plot variables by importance
+varImpPlot(rf_manual,main = "Variable Importance")
+#plot error decrease with increase in number of trees
+plot(rf_manual)
+
+#predict on the test dataset using the model 
+pred.rf.manual <- predict(rf_manual, test_patients_vars, type="prob")
+head(pred.rf.manual)
+
+#convert prediction into dummy variable
+#rf_target_manual_IndMat<-dummy.data.frame(data=as.data.frame(test_patients_vars$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
+
+pred.rf.manual<-pred.rf.manual[,2]
+pred.rf.manual.logloss<-pred.rf.manual
+#use .5 as cutoff for categorization
+pred.rf.manual[pred.rf.manual>=0.5]=1
+pred.rf.manual[pred.rf.manual<0.5]=0
+#confusion matrix
+manual_samp_rf<-table(test_patients_vars$HCV_STATUS,pred.rf.manual);manual_samp_rf
+#confusion proportion table
+round(prop.table(table(test_patients_vars$HCV_STATUS,pred.rf.manual),1),2)
+#miscategorization rate
+manual_rf_samp_miscat<-(manual_samp_rf[1,2]+manual_samp_rf[2,1])/(manual_samp_rf[1,2]+manual_samp_rf[1,1]+manual_samp_rf[2,1]+manual_samp_rf[1,2]);manual_rf_samp_miscat
+
+#calculation logloss
+#HH-Cannot get this to produce a logloss rate. Will work on it
+manual_logloss_rf<-logLoss(test_patients_vars$HCV_STATUS, pred.rf.manual.logloss); manual_logloss_rf
+
+
+#RANDOM FOREST ALGORITHM FOR ROSE SAMPLED DATA
+##LO -  increase the number of trees
+data.rose$HCV_STATUS <- as.factor(data.rose$HCV_STATUS)
+rf_rose<-randomForest(HCV_STATUS~.,ntree=100,data = data.rose,importance = TRUE)
+
+#list variables with importance
+importance(rf_rose)
+#plot variables by importance
+varImpPlot(rf_rose,main = "Variable Importance")
+#plot error decrease with increase in number of trees
+plot(rf_rose)
+
+#predict on the test dataset using the model 
+pred.rf.rose <- predict(rf_rose, test.rose, type="prob")
+head(pred.rf.rose)
+
+#convert prediction into dummy variable
+#rf_target_rose_IndMat<-dummy.data.frame(data=as.data.frame(test.rose$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
+
+pred.rf.rose<-pred.rf.rose[,2]
+pred.rf.rose.logloss<-pred.rf.rose
+#use .5 as cutoff for categorization
+pred.rf.rose[pred.rf.rose>=0.5]=1
+pred.rf.rose[pred.rf.rose<0.5]=0
+#confusion matrix
+rose_samp_rf<-table(test.rose$HCV_STATUS,pred.rf.rose);rose_samp_rf
+#confusion proportion table
+round(prop.table(table(test.rose$HCV_STATUS,pred.rf.rose),1),2)
+#miscategorization rate
+rose_rf_samp_miscat<-(rose_samp_rf[1,2]+rose_samp_rf[2,1])/(rose_samp_rf[1,2]+rose_samp_rf[1,1]+rose_samp_rf[2,1]+rose_samp_rf[1,2]);rose_rf_samp_miscat
+
+#calculation logloss
+rose_logloss_rf<-logLoss(test.rose$HCV_STATUS, pred.rf.rose.logloss); rose_logloss_rf
+
+#depict directionality of the variables
+dir_imp<-importance(rf_rose)[,3]
+dir_imp<-sort(dir_imp, decreasing = TRUE)
+
+#graph the directionality of the first 20 variables
+i=1
+while (i<21) {
+  var_name<-names(dir_imp[i])
+  partialPlot(rf_rose,data_balanced_under, names(dir_imp[i]),main=var_name)
+    i=i+1
+    }
+
+#plot lift chart
+plotLift(pred.rf.under, test_balanced_under$HCV_STATUS, cumulative = TRUE, n.buckets = 100)
+
+#RANDOM FOREST ALGORITHM FOR OVERSAMPLED DATA
+##LO -  increase the number of trees
+data_balanced_over$HCV_STATUS <- as.factor(data_balanced_over$HCV_STATUS)
+rf_over<-randomForest(HCV_STATUS~.,ntree=20,data = data_balanced_over,importance = TRUE)
+
+#list variables with importance
+importance(rf_over)
+#plot variables by importance
+varImpPlot(rf_over,main = "Variable Importance")
+#plot error decrease with increase in number of trees
+plot(rf_over)
+
+#predict on the test dataset using the model 
+pred.rf.over <- predict(rf_over, test_balanced_over, type="prob")
+head(pred.rf.over)
+
+#convert prediction into dummy variable
+#rf_target_over_IndMat<-dummy.data.frame(data=as.data.frame(test_balanced_over$HCV_STATUS), sep="_", verbose=F, dummy.class="ALL")
+
+pred.rf.over<-pred.rf.over[,2]
+pred.rf.over.logloss<-pred.rf.over
+#use .5 as cutoff for categorization
+pred.rf.over[pred.rf.over>=0.5]=1
+pred.rf.over[pred.rf.over<0.5]=0
+#confusion matrix
+over_samp_rf<-table(test_balanced_over$HCV_STATUS,pred.rf.over);over_samp_rf
+#confusion proportion table
+round(prop.table(table(test_balanced_over$HCV_STATUS,pred.rf.over),1),2)
+#miscategorization rate
+over_rf_samp_miscat<-(over_samp_rf[1,2]+over_samp_rf[2,1])/(over_samp_rf[1,2]+over_samp_rf[1,1]+over_samp_rf[2,1]+over_samp_rf[1,2]);over_rf_samp_miscat
+
+#calculation logloss
+over_logloss_rf<-logLoss(test_balanced_over$HCV_STATUS, pred.rf.over.logloss); over_logloss_rf
+
 
 ```
 
