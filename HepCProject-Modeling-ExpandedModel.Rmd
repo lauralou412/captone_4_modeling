@@ -125,7 +125,7 @@ sum(is.na(flat_file))
 
 
 model_variables <- flat_file[c(5:12, 69:124, 181:461, 801:859, 920, 922, 924, 925, 927, 929:1079)]
-dim(reduced_model_variables)
+dim(model_variables)
 patients <- model_variables
 ```
 
@@ -711,7 +711,14 @@ manual_rf_samp_miscat<-(manual_samp_rf[1,2]+manual_samp_rf[2,1])/(manual_samp_rf
 
 #calculation logloss
 #HH-Cannot get this to produce a logloss rate. Will work on it
-manual_logloss_rf<-logLoss(test_patients_vars$HCV_STATUS, pred.rf.manual.logloss); manual_logloss_rf
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+manual_logloss_rf<-LogLoss(test_patients_vars$HCV_STATUS, pred.rf.manual.logloss); manual_logloss_rf
+
+
+
 
 
 #RANDOM FOREST ALGORITHM FOR ROSE SAMPLED DATA
@@ -748,20 +755,25 @@ rose_rf_samp_miscat<-(rose_samp_rf[1,2]+rose_samp_rf[2,1])/(rose_samp_rf[1,2]+ro
 #calculation logloss
 rose_logloss_rf<-logLoss(test.rose$HCV_STATUS, pred.rf.rose.logloss); rose_logloss_rf
 
+#do holdout analysis for the stability of the model
+ROSE.holdout <- ROSE.eval(HCV_STATUS ~ ., data = data.rose, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
+ROSE.holdout
+
 #depict directionality of the variables
 dir_imp<-importance(rf_rose)[,3]
 dir_imp<-sort(dir_imp, decreasing = TRUE)
 
 #graph the directionality of the first 20 variables
-i=1
-while (i<21) {
+i=5
+#while (i==3) {
   var_name<-names(dir_imp[i])
-  partialPlot(rf_rose,data_balanced_under, names(dir_imp[i]),main=var_name)
-    i=i+1
-    }
+  partialPlot(rf_rose,data.rose, names(dir_imp[i]),main=var_name)
+    #i=i+1
+   # }
 
 #plot lift chart
-plotLift(pred.rf.under, test_balanced_under$HCV_STATUS, cumulative = TRUE, n.buckets = 100)
+plotLift(pred.rf.rose, test.rose$HCV_STATUS, cumulative = TRUE, n.buckets = 100, main="Lift Chart")
+
 
 #RANDOM FOREST ALGORITHM FOR OVERSAMPLED DATA
 ##LO -  increase the number of trees
@@ -796,8 +808,6 @@ over_rf_samp_miscat<-(over_samp_rf[1,2]+over_samp_rf[2,1])/(over_samp_rf[1,2]+ov
 
 #calculation logloss
 over_logloss_rf<-logLoss(test_balanced_over$HCV_STATUS, pred.rf.over.logloss); over_logloss_rf
-
-
 ```
 
 
