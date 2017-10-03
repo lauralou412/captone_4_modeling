@@ -336,6 +336,10 @@ xp_pred_rose[xp_pred_rose<0.5]=0
 table(test.rose$HCV_STATUS,xp_pred_rose)
 round(prop.table(table(test.rose$HCV_STATUS,xp_pred_rose),1),2)
 
+
+ROSE.holdout <- ROSE.eval(cls ~ ., data = data.rose, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
+> ROSE.holdout
+
 ```
 
 
@@ -660,7 +664,11 @@ Under_rf_samp_miscat<-(under_samp_rf[1,2]+under_samp_rf[2,1])/(under_samp_rf[1,2
 
 #calculation logloss
 #HH-Cannot get this to produce a logloss rate. Will work on it
-UNDER_logloss_rf<-logLoss(test_balanced_under$HCV_STATUS, pred.rf.under.logloss); UNDER_logloss_rf
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+UNDER_logloss_rf<-LogLoss(test_balanced_under$HCV_STATUS, pred.rf.under.logloss); UNDER_logloss_rf
 
 #depict directionality of the variables
 dir_imp<-importance(rf_under)[,3]
@@ -718,9 +726,6 @@ LogLoss <- function(actual, predicted, eps=0.00001) {
 manual_logloss_rf<-LogLoss(test_patients_vars$HCV_STATUS, pred.rf.manual.logloss); manual_logloss_rf
 
 
-
-
-
 #RANDOM FOREST ALGORITHM FOR ROSE SAMPLED DATA
 ##LO -  increase the number of trees
 data.rose$HCV_STATUS <- as.factor(data.rose$HCV_STATUS)
@@ -753,7 +758,12 @@ round(prop.table(table(test.rose$HCV_STATUS,pred.rf.rose),1),2)
 rose_rf_samp_miscat<-(rose_samp_rf[1,2]+rose_samp_rf[2,1])/(rose_samp_rf[1,2]+rose_samp_rf[1,1]+rose_samp_rf[2,1]+rose_samp_rf[1,2]);rose_rf_samp_miscat
 
 #calculation logloss
-rose_logloss_rf<-logLoss(test.rose$HCV_STATUS, pred.rf.rose.logloss); rose_logloss_rf
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+rose_logloss_rf<-LogLoss(test.rose$HCV_STATUS, pred.rf.rose.logloss); rose_logloss_rf
 
 #do holdout analysis for the stability of the model
 ROSE.holdout <- ROSE.eval(HCV_STATUS ~ ., data = data.rose, learner = rpart, method.assess = "holdout", extr.pred = function(obj)obj[,2], seed = 1)
@@ -807,13 +817,17 @@ round(prop.table(table(test_balanced_over$HCV_STATUS,pred.rf.over),1),2)
 over_rf_samp_miscat<-(over_samp_rf[1,2]+over_samp_rf[2,1])/(over_samp_rf[1,2]+over_samp_rf[1,1]+over_samp_rf[2,1]+over_samp_rf[1,2]);over_rf_samp_miscat
 
 #calculation logloss
-over_logloss_rf<-logLoss(test_balanced_over$HCV_STATUS, pred.rf.over.logloss); over_logloss_rf
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+over_logloss_rf<-LogLoss(test_balanced_over$HCV_STATUS, pred.rf.over.logloss); over_logloss_rf
 ```
 
 
 ```{r}
-#GRADIENT BOOSTING ALGORITHM
-#HH - xgboost not working on this version of R; using gbm instead
+#GRADIENT BOOSTING ALGORITHM - GBM
 
 suppressWarnings(library(gbm))
 suppressWarnings(library(caret))
@@ -861,10 +875,315 @@ for (f in feature.names) {
 testX<-test[,c(-1)]
 testY<-test[,1]
 
-table(predict(gbmFitIso, testX,type='raw'), testY)
+pred.boost.under<-predict(gbmFitIso, testX,type='raw')
+
+
+#pred.boost.under<-pred.boost.under[,2]
+pred.boost.under.logloss<-pred.boost.under
+#use .5 as cutoff for categorization
+pred.boost.under[pred.boost.under>=0.5]=1
+pred.boost.under[pred.boost.under<0.5]=0
+#confusion matrix
+under_samp_boost<-table(testY,pred.boost.under);under_samp_boost
+#confusion proportion table
+round(prop.table(table(testY,pred.boost.under),1),2)
+#miscategorization rate
+under_boost_samp_miscat<-(under_samp_boost[1,2]+under_samp_boost[2,1])/(under_samp_boost[1,2]+under_samp_boost[1,1]+under_samp_boost[2,1]+under_samp_boost[1,2]);under_boost_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+under_logloss_boost<-LogLoss(testY, pred.boost.under.logloss); under_logloss_boost
 
 
 ```
+
+
+
+```{r}
+
+#GRADIENT BOOSTING ALGORITHM XGBOOST
+
+suppressWarnings(library(xgboost))
+
+#2. FOR UNDERSAMPING TECHNIQUE
+
+train<-data_balanced_under
+  
+feature.names=names(train)
+
+for (f in feature.names) {
+  if (class(train[[f]])=="factor") {
+    levels <- unique(c(train[[f]]))
+    train[[f]] <- factor(train[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+trainX<-train[,c(-1)]
+trainY<-train[,1]
+
+test<-test_balanced_under
+  
+feature.names=names(test)
+
+for (f in feature.names) {
+  if (class(test[[f]])=="factor") {
+    levels <- unique(c(test[[f]]))
+    test[[f]] <- factor(test[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+testX<-test[,c(-1)]
+testY<-test[,1]
+
+
+xgbTrain = data.matrix(trainX)
+xgbTest = data.matrix(testX)
+trainY = as.integer(trainY)
+testY = as.integer(testY)
+
+numClasses = max(trainY)+1
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = numClasses)
+
+
+#The choice of "objective" = "multi:softprob" represents generalization of logistic link into multiple classes and returns a matrix of class probabilities, as opposed to "objective" = "multi:softmax" which returns the class of maximum probability.
+
+#Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
+
+cv.nround <- 10
+cv.nfold <- 3
+set.seed(1)
+(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, 
+                nfold = cv.nfold, nrounds = cv.nround,verbose=F))
+
+
+bst = xgboost(param=param, data = xgbTrain, label = trainY, 
+              nrounds=cv.nround,verbose=F)
+pred.xgboost.under <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+head(pred.xgboost.under)
+
+
+## 3. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+pred.xgboost.under<-pred.xgboost.under[,2]
+
+pred.xgboost.under.logloss<-pred.xgboost.under
+#use .5 as cutoff for categorization
+pred.xgboost.under[pred.xgboost.under>=0.5]=1
+pred.xgboost.under[pred.xgboost.under<0.5]=0
+#confusion matrix
+under_samp_xgboost<-table(testY,pred.xgboost.under);under_samp_xgboost
+#confusion proportion table
+round(prop.table(table(testY,pred.xgboost.under),1),2)
+#miscategorization rate
+under_xgboost_samp_miscat<-(under_samp_xgboost[1,2]+under_samp_xgboost[2,1])/(under_samp_xgboost[1,2]+under_samp_xgboost[1,1]+under_samp_xgboost[2,1]+under_samp_xgboost[1,2]);under_xgboost_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+under_logloss_xgboost<-LogLoss(testY, pred.xgboost.under.logloss); under_logloss_xgboost
+
+
+
+
+#3. FOR UNDERSAMPING TECHNIQUE
+
+set.seed(567)
+train<-data_balanced_over
+  
+feature.names=names(train)
+
+for (f in feature.names) {
+  if (class(train[[f]])=="factor") {
+    levels <- unique(c(train[[f]]))
+    train[[f]] <- factor(train[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+trainX<-train[,c(-1)]
+trainY<-train[,1]
+
+test<-test_balanced_over
+  
+feature.names=names(test)
+
+for (f in feature.names) {
+  if (class(test[[f]])=="factor") {
+    levels <- unique(c(test[[f]]))
+    test[[f]] <- factor(test[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+testX<-test[,c(-1)]
+testY<-test[,1]
+
+
+xgbTrain = data.matrix(trainX)
+xgbTest = data.matrix(testX)
+trainY = as.integer(trainY)
+testY = as.integer(testY)
+
+numClasses = max(trainY)+1
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = numClasses)
+
+
+#The choice of "objective" = "multi:softprob" represents generalization of logistic link into multiple classes and returns a matrix of class probabilities, as opposed to "objective" = "multi:softmax" which returns the class of maximum probability.
+
+#Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
+
+cv.nround <- 10
+cv.nfold <- 3
+#set.seed(1)
+#(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, nfold = cv.nfold, nrounds = cv.nround,verbose=F))
+
+
+bst = xgboost(param=param, data = xgbTrain, label = trainY, 
+              nrounds=cv.nround,verbose=F)
+pred.xgboost.over <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+head(pred.xgboost.over)
+
+
+## 3. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+pred.xgboost.over<-pred.xgboost.over[,2]
+
+pred.xgboost.over.logloss<-pred.xgboost.over
+#use .5 as cutoff for categorization
+pred.xgboost.over[pred.xgboost.over>=0.5]=1
+pred.xgboost.over[pred.xgboost.over<0.5]=0
+#confusion matrix
+over_samp_xgboost<-table(testY,pred.xgboost.over);over_samp_xgboost
+#confusion proportion table
+round(prop.table(table(testY,pred.xgboost.over),1),2)
+#miscategorization rate
+over_xgboost_samp_miscat<-(over_samp_xgboost[1,2]+over_samp_xgboost[2,1])/(over_samp_xgboost[1,2]+over_samp_xgboost[1,1]+over_samp_xgboost[2,1]+over_samp_xgboost[1,2]);over_xgboost_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+over_logloss_xgboost<-LogLoss(testY, pred.xgboost.over.logloss); over_logloss_xgboost
+
+#Variable importance
+over_var_imp<-xgb.importance(colnames(trainY), model = bst)
+
+i=1
+while (i<=nrow(over_var_imp)) {
+  index<-as.numeric(over_var_imp[i,1])
+  over_var_imp[i,1]<-names(trainX[index])
+  i<-i+1
+  }
+  
+head(over_var_imp)
+
+#4. FOR BOTH SAMPLING TECHNIQUE
+
+train<-data_balanced_both
+  
+feature.names=names(train)
+
+for (f in feature.names) {
+  if (class(train[[f]])=="factor") {
+    levels <- unique(c(train[[f]]))
+    train[[f]] <- factor(train[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+trainX<-train[,c(-1)]
+trainY<-train[,1]
+
+test<-test_balanced_both
+  
+feature.names=names(test)
+
+for (f in feature.names) {
+  if (class(test[[f]])=="factor") {
+    levels <- unique(c(test[[f]]))
+    test[[f]] <- factor(test[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+testX<-test[,c(-1)]
+testY<-test[,1]
+
+
+xgbTrain = data.matrix(trainX)
+xgbTest = data.matrix(testX)
+trainY = as.integer(trainY)
+testY = as.integer(testY)
+
+numClasses = max(trainY)+1
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = numClasses)
+
+
+#The choice of "objective" = "multi:softprob" represents generalization of logistic link into multiple classes and returns a matrix of class probabilities, as opposed to "objective" = "multi:softmax" which returns the class of maximum probability.
+
+#Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
+
+cv.nround <- 10
+cv.nfold <- 3
+set.seed(1)
+(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, 
+                nfold = cv.nfold, nrounds = cv.nround,verbose=F))
+
+
+bst = xgboost(param=param, data = xgbTrain, label = trainY, 
+              nrounds=cv.nround,verbose=F)
+pred.xgboost.both <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+head(pred.xgboost.both)
+
+
+## 3. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+pred.xgboost.both<-pred.xgboost.both[,2]
+
+pred.xgboost.both.logloss<-pred.xgboost.both
+#use .5 as cutoff for categorization
+pred.xgboost.both[pred.xgboost.both>=0.5]=1
+pred.xgboost.both[pred.xgboost.both<0.5]=0
+#confusion matrix
+both_samp_xgboost<-table(testY,pred.xgboost.both);both_samp_xgboost
+#confusion proportion table
+round(prop.table(table(testY,pred.xgboost.both),1),2)
+#miscategorization rate
+both_xgboost_samp_miscat<-(both_samp_xgboost[1,2]+both_samp_xgboost[2,1])/(both_samp_xgboost[1,2]+both_samp_xgboost[1,1]+both_samp_xgboost[2,1]+both_samp_xgboost[1,2]);both_xgboost_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+both_logloss_xgboost<-LogLoss(testY, pred.xgboost.both.logloss); both_logloss_xgboost
+```
+
+
+
+
+
+
+
+
+
+
+
 
 
 ```{r}
