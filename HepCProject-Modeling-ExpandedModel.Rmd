@@ -14,7 +14,6 @@ library(Metrics)
 library(randomForest)
 library(lift)
 suppressWarnings(library(dummies))
-setwd("Z:/Model Output")
 
 
 ```
@@ -909,7 +908,7 @@ under_logloss_boost<-LogLoss(testY, pred.boost.under.logloss); under_logloss_boo
 
 suppressWarnings(library(xgboost))
 
-#2. FOR UNDERSAMPING TECHNIQUE
+#1. FOR UNDERSAMPING TECHNIQUE
 
 train<-data_balanced_under
   
@@ -970,7 +969,7 @@ pred.xgboost.under <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = T
 head(pred.xgboost.under)
 
 
-## 3. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+## 1. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
 pred.xgboost.under<-pred.xgboost.under[,2]
 
 pred.xgboost.under.logloss<-pred.xgboost.under
@@ -995,7 +994,7 @@ under_logloss_xgboost<-LogLoss(testY, pred.xgboost.under.logloss); under_logloss
 
 
 
-#3. FOR UNDERSAMPING TECHNIQUE
+#2. FOR OVERSAMPING TECHNIQUE
 
 set.seed(567)
 train<-data_balanced_over
@@ -1056,7 +1055,7 @@ pred.xgboost.over <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TR
 head(pred.xgboost.over)
 
 
-## 3. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+## 2. METRICS FOR XGBOOST ALGORITHM FOR OVERSAMPLING TECHNIQUE
 pred.xgboost.over<-pred.xgboost.over[,2]
 
 pred.xgboost.over.logloss<-pred.xgboost.over
@@ -1090,7 +1089,7 @@ while (i<=nrow(over_var_imp)) {
   
 head(over_var_imp)
 
-#4. FOR BOTH SAMPLING TECHNIQUE
+#3. FOR BOTH SAMPLING TECHNIQUE
 
 train<-data_balanced_both
   
@@ -1151,7 +1150,7 @@ pred.xgboost.both <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TR
 head(pred.xgboost.both)
 
 
-## 3. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+## 3. METRICS FOR XGBOOST ALGORITHM FOR BOTH SAMPLING TECHNIQUE
 pred.xgboost.both<-pred.xgboost.both[,2]
 
 pred.xgboost.both.logloss<-pred.xgboost.both
@@ -1172,9 +1171,63 @@ LogLoss <- function(actual, predicted, eps=0.00001) {
 }
 
 both_logloss_xgboost<-LogLoss(testY, pred.xgboost.both.logloss); both_logloss_xgboost
+
+#Variable importance
+both_var_imp<-xgb.importance(colnames(trainY), model = bst)
+
+i=1
+while (i<=nrow(both_var_imp)) {
+  index<-as.numeric(both_var_imp[i,1])
+  both_var_imp[i,1]<-names(trainX[index])
+  i<-i+1
+  }
+  
+head(both_var_imp, n=15)
 ```
 
 
+```{r}
+#Anomaly detection
+library(anomalyDetection)
+library(ggplot2)
+
+#Example from CRAN
+data("security_logs")
+head(security_logs)
+
+#data set input
+hmat(security_logs,block_length = 8)
+
+#data set input with top 10 blocks displayed
+hmat(security_logs, top=10, block_length = 5)
+
+#state vector input
+tabulate_state_vector(security_logs, block_length = 6, level_limit = 20) %>%
+  hmat(input = "SV")
+
+
+
+```
+
+```{r}
+#K Nearest neighbors
+data("iris")
+head(iris)
+library(class)
+
+
+#KNN on undersampled data
+knn_under_train <- data_balanced_under[,2:560]
+knn_under_test <- test_balanced_under[,2:560]
+knn_under_trainLabels <- data_balanced_under[,1]
+knn_under_testLabels <- test_balanced_under[,1]
+
+knn_under_trainLabels <- as.factor(knn_under_trainLabels)
+knn_under_testLabels <- as.factor(knn_under_testLabels)
+
+knn_under <- knn(train=knn_under_train, test=knn_under_test, cl=knn_under_trainLabels, k=3)
+
+```
 
 
 
