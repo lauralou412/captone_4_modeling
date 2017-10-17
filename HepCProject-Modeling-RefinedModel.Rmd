@@ -297,14 +297,97 @@ table(test_balanced_both$HCV_STATUS)
 
 
 
-
-
-
 ```{r}
 
 #GRADIENT BOOSTING ALGORITHM XGBOOST
 
 suppressWarnings(library(xgboost))
+
+#1. FOR MANUAL TECHNIQUE
+
+train<-train_patients_vars
+  
+feature.names=names(train)
+
+for (f in feature.names) {
+  if (class(train[[f]])=="factor") {
+    levels <- unique(c(train[[f]]))
+    train[[f]] <- factor(train[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+trainX<-train[,c(-1)]
+trainY<-train[,1]
+
+test<-test_patients_vars
+  
+feature.names=names(test)
+
+for (f in feature.names) {
+  if (class(test[[f]])=="factor") {
+    levels <- unique(c(test[[f]]))
+    test[[f]] <- factor(test[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+testX<-test[,c(-1)]
+testY<-test[,1]
+
+
+xgbTrain = data.matrix(trainX)
+xgbTest = data.matrix(testX)
+
+trainY = as.integer(trainY)
+testY = as.integer(testY)
+
+numClasses = max(trainY)+1
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = numClasses)
+
+
+#The choice of "objective" = "multi:softprob" represents generalization of logistic link into multiple classes and returns a matrix of class probabilities, as opposed to "objective" = "multi:softmax" which returns the class of maximum probability.
+
+#Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
+
+cv.nround <- 100
+cv.nfold <- 30
+set.seed(1)
+#(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, nfold = cv.nfold, nrounds = cv.nround,verbose=F))
+
+
+bst = xgboost(param=param, data = xgbTrain, label = trainY, 
+              nrounds=cv.nround,verbose=F)
+pred.xgboost.man <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+head(pred.xgboost.under)
+
+
+## 1. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+pred.xgboost.man<-pred.xgboost.man[,2]
+
+pred.xgboost.man.logloss<-pred.xgboost.man
+#use .5 as cutoff for categorization
+pred.xgboost.man[pred.xgboost.man>=0.5]=1
+pred.xgboost.man[pred.xgboost.man<0.5]=0
+#confusion matrix
+man_samp_xgboost<-table(testY,pred.xgboost.man);man_samp_xgboost
+#confusion proportion table
+round(prop.table(table(testY,pred.xgboost.man),1),2)
+#miscategorization rate
+man_xgboost_samp_miscat<-(man_samp_xgboost[1,2]+man_samp_xgboost[2,1])/(man_samp_xgboost[1,2]+man_samp_xgboost[1,1]+man_samp_xgboost[2,1]+man_samp_xgboost[1,2]);man_xgboost_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+man_logloss_xgboost<-LogLoss(testY, pred.xgboost.man.logloss); man_logloss_xgboost
+
+
+
 
 #1. FOR UNDERSAMPING TECHNIQUE
 
@@ -355,11 +438,10 @@ param <- list("objective" = "multi:softprob",
 
 #Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
 
-cv.nround <- 10
-cv.nfold <- 3
+cv.nround <- 100
+cv.nfold <- 30
 set.seed(1)
-(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, 
-                nfold = cv.nfold, nrounds = cv.nround,verbose=F))
+#(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, nfold = cv.nfold, nrounds = cv.nround,verbose=F))
 
 
 bst = xgboost(param=param, data = xgbTrain, label = trainY, 
@@ -391,6 +473,17 @@ LogLoss <- function(actual, predicted, eps=0.00001) {
 under_logloss_xgboost<-LogLoss(testY, pred.xgboost.under.logloss); under_logloss_xgboost
 
 
+#Variable importance
+man_var_imp<-xgb.importance(colnames(trainY), model = bst)
+
+i=1
+while (i<=nrow(man_var_imp)) {
+  index<-as.numeric(man_var_imp[i,1])
+  man_var_imp[i,1]<-names(trainX[index])
+  i<-i+1
+  }
+  
+head(man_var_imp)
 
 
 #2. FOR OVERSAMPING TECHNIQUE
@@ -442,8 +535,8 @@ param <- list("objective" = "multi:softprob",
 
 #Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
 
-cv.nround <- 10
-cv.nfold <- 3
+cv.nround <- 100
+cv.nfold <- 30
 #set.seed(1)
 #(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, nfold = cv.nfold, nrounds = cv.nround,verbose=F))
 
@@ -536,16 +629,16 @@ param <- list("objective" = "multi:softprob",
 
 #Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
 
-cv.nround <- 10
-cv.nfold <- 3
+cv.nround <- 100
+cv.nfold <- 30
 set.seed(1)
-(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, 
-                nfold = cv.nfold, nrounds = cv.nround,verbose=F))
-
+#(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, nfold = cv.nfold, nrounds = cv.nround,verbose=F))
 
 bst = xgboost(param=param, data = xgbTrain, label = trainY, 
               nrounds=cv.nround,verbose=F)
+
 pred.xgboost.both <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+
 head(pred.xgboost.both)
 
 
