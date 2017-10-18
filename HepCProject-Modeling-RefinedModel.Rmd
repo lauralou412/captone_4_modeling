@@ -364,7 +364,7 @@ pred.xgboost.man <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRU
 head(pred.xgboost.under)
 
 
-## 1. METRICS FOR XGBOOST ALGORITHM FOR UNDERSAMPLING TECHNIQUE
+## 1. METRICS FOR XGBOOST ALGORITHM FOR MANUAL TECHNIQUE
 pred.xgboost.man<-pred.xgboost.man[,2]
 
 pred.xgboost.man.logloss<-pred.xgboost.man
@@ -387,9 +387,56 @@ LogLoss <- function(actual, predicted, eps=0.00001) {
 man_logloss_xgboost<-LogLoss(testY, pred.xgboost.man.logloss); man_logloss_xgboost
 
 
+### TRY DIFFERENT THRESHOLDS FOR PROBABILITY
 
+pred.xgboost.man <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+head(pred.xgboost.under)
 
-#1. FOR UNDERSAMPING TECHNIQUE
+results_table <- data.frame(Threshold=double(),
+                 Miscat_rate=double(),
+                 Logloss=double(),
+                 false_negatives=double(),
+                 false_positives=double())
+
+pred.xgboost.man<-pred.xgboost.man[,2]
+pred.xgboost.man.logloss<-pred.xgboost.man
+
+LogLoss <- function(actual, predicted, eps=0.00001) {
+    predicted <- pmin(pmax(predicted, eps), 1-eps)
+    -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+  }
+  
+threshold=.8
+i<-threshold
+
+while (i<1){
+
+  pred.xgboost.man_met<-pred.xgboost.man
+  pred.xgboost.man_met[pred.xgboost.man_met>=threshold]=1
+  pred.xgboost.man_met[pred.xgboost.man_met<threshold]=0
+  #confusion matrix
+  man_samp_xgboost_met<-table(testY,pred.xgboost.man_met);man_samp_xgboost_met
+  #confusion proportion table
+  round(prop.table(table(testY,pred.xgboost.man_met),1),2)
+  #miscategorization rate
+  man_xgboost_samp_miscat<-(man_samp_xgboost_met[1,2]+man_samp_xgboost_met[2,1])/(man_samp_xgboost_met[1,2]+man_samp_xgboost_met[1,1]+man_samp_xgboost_met[2,1]+man_samp_xgboost_met[1,2]);man_xgboost_samp_miscat
+
+  #calculation logloss
+  
+  man_logloss_xgboost<-LogLoss(testY, pred.xgboost.man.logloss)
+
+  results_table[threshold*10,1]<-threshold
+  results_table[threshold*10,2]<-man_xgboost_samp_miscat
+  results_table[threshold*10,3]<-man_logloss_xgboost
+  results_table[threshold*10,4]<-man_samp_xgboost_met[1,2]
+  results_table[threshold*10,5]<-man_samp_xgboost_met[2,1]
+  i<-i+.1
+  threshold<-i
+}
+
+results_table
+
+#2. FOR UNDERSAMPING TECHNIQUE
 
 train<-data_balanced_under
   
@@ -474,16 +521,18 @@ under_logloss_xgboost<-LogLoss(testY, pred.xgboost.under.logloss); under_logloss
 
 
 #Variable importance
-man_var_imp<-xgb.importance(colnames(trainY), model = bst)
+under_var_imp<-xgb.importance(colnames(trainY), model = bst)
+
+head(under_var_imp)
 
 i=1
-while (i<=nrow(man_var_imp)) {
-  index<-as.numeric(man_var_imp[i,1])
-  man_var_imp[i,1]<-names(trainX[index])
-  i<-i+1
-  }
+while (i<=nrow(under_var_imp)) {
+ index<-as.numeric(under_var_imp[i,1])
+man_var_imp[i,1]<-names(trainX[index])
+i<-i+1
+}
   
-head(man_var_imp)
+head(under_var_imp)
 
 
 #2. FOR OVERSAMPING TECHNIQUE
@@ -572,12 +621,12 @@ over_logloss_xgboost<-LogLoss(testY, pred.xgboost.over.logloss); over_logloss_xg
 #Variable importance
 over_var_imp<-xgb.importance(colnames(trainY), model = bst)
 
-i=1
-while (i<=nrow(over_var_imp)) {
-  index<-as.numeric(over_var_imp[i,1])
-  over_var_imp[i,1]<-names(trainX[index])
-  i<-i+1
-  }
+#i=1
+#while (i<=nrow(over_var_imp)) {
+ # index<-as.numeric(over_var_imp[i,1])
+  #over_var_imp[i,1]<-names(trainX[index])
+  #i<-i+1
+#  }
   
 head(over_var_imp)
 
