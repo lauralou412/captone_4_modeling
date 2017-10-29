@@ -19,65 +19,6 @@ suppressWarnings(library(dummies))
 ```
 
 
-```{r}
-#IMPORT DATA FROM PATIENTS FILES
-
-##patients table only
-#patients <- read.csv("Z:/Flat File/patients.csv", ",", header = TRUE)
-
-## patients table with HEDIS only
-#patients <- read.csv("Z:/Flat File/patients_HEDIS_20170816file.csv", ",", header = TRUE)
-
-#patients table with HEDIS and CCS
-patients <- read.csv("Z:/Flat File/patients_HEDIS_and_CCS_20170816file.csv", ",", header = TRUE)
-
-dim(patients)
-
-#remove the index column
-patients <- patients[,-1]
-dim(patients)
-
-
-## bin patients by generation - add this to the variable creation file
-#patients[,461]<-ifelse(patients$DOB_DS < 1945/01/01, "Silent", ifelse(patients$DOB_DS >= 1945/01/01 & patients$DOB_DS < 1964/01/01,"Baby Boomer", ifelse(patients$DOB_DS >= 1964/01/01 & patients$DOB_DS <1980/01/01, "Gen X",ifelse(patients$DOB_DS >= 1980/01/01, "Millennial", "Unknown"))))
-#names(patients)[461]<-paste("GENERATION_CATEGORY")
-#patients$GENERATION_CATEGORY <- as.factor(patients$GENERATION_CATEGORY)
-
-#str(patients[,1:75])
-#str(patients[,76:129])
-#str(patients[,130:171])
-#str(patients[,172:179])
-#str(patients[,179:200])
-#str(patients[,201:460])
-
-patients$PATIENT_ID <-  as.character(patients$PATIENT_ID)
-patients$HCV_STATUS <-  as.factor(patients$HCV_STATUS)
-patients[8:122] <- sapply(patients[8:122], as.numeric)
-#patients[130:160] <- sapply(patients[130:171], as.numeric)
-#patients[130:171] <- sapply(patients[130:171], as.numeric)
-#patients[173:177] <- sapply(patients[173:177], as.numeric)
-#patients[179:460] <- sapply(patients[179:460], as.numeric)
-
-patients$Insurance_Gap <- as.factor(patients$Insurance_Gap)
-patients$Insurance_Aided <- as.factor(patients$Insurance_Aided)
-
-#check that there are no na's in the dataset
-sum(is.na(patients))
-
-#Demographic variables = 4-7
-#ICD codes grouped by HEDIS value sets = 8-63
-#CPT codes by HEDIS value sets = 64-122
-#Encounter variables = 123-129
-#ACS variables = 130-171
-#Social variables = 172-179
-#ICD grouped by CCS variables = 180-460
-
-# leave baselinemodel variables only
-patients<-patients[,c(1:179)]
-dim(patients)
-
-```
-
 #Demographic variables = 4-7
 #ICD codes grouped by HEDIS value sets = 8-63
 #CPT codes by HEDIS value sets = 64-122
@@ -822,6 +763,45 @@ LogLoss <- function(actual, predicted, eps=0.00001) {
 }
 
 over_logloss_rf<-LogLoss(test_balanced_over$HCV_STATUS, pred.rf.over.logloss); over_logloss_rf
+
+
+#RANDOM FOREST ALGORITHM FOR OVER- & UNDER-SAMPLED DATA
+##LO -  increase the number of trees
+
+data_balanced_both$HCV_STATUS <- as.factor(data_balanced_both$HCV_STATUS)
+rf_over_under<-randomForest(HCV_STATUS~.,ntree=20,data = data_balanced_both,importance = TRUE)
+
+#list variables with importance
+importance(rf_over_under)
+#plot variables by importance
+varImpPlot(rf_over_under,main = "Variable Importance")
+#plot error decrease with increase in number of trees
+plot(rf_over_under)
+
+#predict on the test dataset using the model 
+pred.rf.over.under <- predict(rf_over_under, test_balanced_both, type="prob")
+head(pred.rf.over.under)
+
+pred.rf.over.under<-pred.rf.over.under[,2]
+pred.rf.over.under.logloss<-pred.rf.over.under
+
+#use .5 as cutoff for categorization
+pred.rf.over.under[pred.rf.over.under>=0.5]=1
+pred.rf.over.under[pred.rf.over.under<0.5]=0
+#confusion matrix
+over_under_samp_rf<-table(test_balanced_both$HCV_STATUS,pred.rf.over.under);over_under_samp_rf
+#confusion proportion table
+round(prop.table(table(test_balanced_both$HCV_STATUS,pred.rf.over.under),1),2)
+#miscategorization rate
+over_under_rf_samp_miscat<-(over_under_samp_rf[1,2]+over_under_samp_rf[2,1])/(over_under_samp_rf[1,2]+over_under_samp_rf[1,1]+over_under_samp_rf[2,1]+over_under_samp_rf[1,2]);over_under_rf_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+over_under_logloss_rf<-LogLoss(test_balanced_both$HCV_STATUS, pred.rf.over.under.logloss); over_under_logloss_rf
 ```
 
 
@@ -907,6 +887,102 @@ under_logloss_boost<-LogLoss(testY, pred.boost.under.logloss); under_logloss_boo
 #GRADIENT BOOSTING ALGORITHM XGBOOST
 
 suppressWarnings(library(xgboost))
+
+#0. FOR MANUAL SAMPLING TECHNIQUE
+
+train<-train_patients_vars
+  
+feature.names=names(train)
+
+for (f in feature.names) {
+  if (class(train[[f]])=="factor") {
+    levels <- unique(c(train[[f]]))
+    train[[f]] <- factor(train[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+trainX<-train[,c(-1)]
+trainY<-train[,1]
+
+test<-test_patients_vars
+  
+feature.names=names(test)
+
+for (f in feature.names) {
+  if (class(test[[f]])=="factor") {
+    levels <- unique(c(test[[f]]))
+    test[[f]] <- factor(test[[f]],
+                   labels=make.names(levels))
+  }
+}
+  
+testX<-test[,c(-1)]
+testY<-test[,1]
+
+
+xgbTrain = data.matrix(trainX)
+xgbTest = data.matrix(testX)
+trainY = as.integer(trainY)
+testY = as.integer(testY)
+
+numClasses = max(trainY)+1
+param <- list("objective" = "multi:softprob",
+              "eval_metric" = "mlogloss",
+              "num_class" = numClasses)
+
+
+#The choice of "objective" = "multi:softprob" represents generalization of logistic link into multiple classes and returns a matrix of class probabilities, as opposed to "objective" = "multi:softmax" which returns the class of maximum probability.
+
+#Sometimes it is important to use cross-validation to examine the model, for example, in order to find optimal number of iterations. In library xgboost this is done by function xgb.cv(). Fit boosting model.
+
+cv.nround <- 10
+cv.nfold <- 3
+set.seed(1)
+(bst.cv = xgb.cv(param=param, data = xgbTrain, label = trainY, 
+                nfold = cv.nfold, nrounds = cv.nround,verbose=F))
+
+
+bst = xgboost(param=param, data = xgbTrain, label = trainY, 
+              nrounds=cv.nround,verbose=F)
+pred.xgboost.manual <- matrix(predict(bst, xgbTest), ncol = numClasses, byrow = TRUE)
+head(pred.xgboost.both)
+
+
+## 0. METRICS FOR XGBOOST ALGORITHM FOR MANUAL SAMPLING TECHNIQUE
+pred.xgboost.manual<-pred.xgboost.manual[,2]
+
+pred.xgboost.manual.logloss<-pred.xgboost.manual
+#use .5 as cutoff for categorization
+pred.xgboost.manual[pred.xgboost.manual>=0.5]=1
+pred.xgboost.manual[pred.xgboost.manual<0.5]=0
+#confusion matrix
+manual_samp_xgboost<-table(testY,pred.xgboost.manual);manual_samp_xgboost
+#confusion proportion table
+round(prop.table(table(testY,pred.xgboost.manual),1),2)
+#miscategorization rate
+manual_xgboost_samp_miscat<-(manual_samp_xgboost[1,2]+manual_samp_xgboost[2,1])/(manual_samp_xgboost[1,2]+manual_samp_xgboost[1,1]+manual_samp_xgboost[2,1]+manual_samp_xgboost[1,2]);manual_xgboost_samp_miscat
+
+#calculation logloss
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+
+manual_logloss_xgboost<-LogLoss(testY, pred.xgboost.manual.logloss); manual_logloss_xgboost
+
+#Variable importance
+manual_var_imp<-xgb.importance(colnames(trainY), model = bst)
+
+i=1
+while (i<=nrow(manual_var_imp)) {
+  index<-as.numeric(manual_var_imp[i,1])
+  manual_var_imp[i,1]<-names(trainX[index])
+  i<-i+1
+  }
+  
+head(manual_var_imp, n=15)
+
 
 #1. FOR UNDERSAMPING TECHNIQUE
 
