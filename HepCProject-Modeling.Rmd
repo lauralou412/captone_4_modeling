@@ -21,58 +21,39 @@ suppressWarnings(library(dummies))
 ```{r}
 #IMPORT DATA FROM PATIENTS FILES
 
-##patients table only
-#patients <- read.csv("Z:/Flat File/patients.csv", ",", header = TRUE)
 
-## patients table with HEDIS only
-#patients <- read.csv("Z:/Flat File/patients_HEDIS_20170816file.csv", ",", header = TRUE)
-
-#patients table with HEDIS and CCS
-patients <- read.csv("Z:/Flat File/patients_HEDIS_and_CCS_20170816file.csv", ",", header = TRUE)
-
-dim(patients)
-
-#remove the index column
-patients <- patients[,-1]
-dim(patients)
+###Import and format columns
+flat_file <- read.csv("Z:/Flat File/patients_all_variables_09-07-2017.csv", ",", header = TRUE, stringsAsFactors = FALSE)
 
 
-## bin patients by generation - add this to the variable creation file
-#patients[,461]<-ifelse(patients$DOB_DS < 1945/01/01, "Silent", ifelse(patients$DOB_DS >= 1945/01/01 & patients$DOB_DS < 1964/01/01,"Baby Boomer", ifelse(patients$DOB_DS >= 1964/01/01 & patients$DOB_DS <1980/01/01, "Gen X",ifelse(patients$DOB_DS >= 1980/01/01, "Millennial", "Unknown"))))
-#names(patients)[461]<-paste("GENERATION_CATEGORY")
-#patients$GENERATION_CATEGORY <- as.factor(patients$GENERATION_CATEGORY)
+flat_file$PATIENT_ID <- as.character(flat_file$PATIENT_ID)
+flat_file[,2:3] <- lapply(flat_file[,2:3], as.Date)
+flat_file$HCV_STATUS <- as.numeric(flat_file$HCV_STATUS)
+flat_file[,6:12] <- lapply(flat_file[,6:12], as.factor)
+flat_file[,13:980] <- lapply(flat_file[,13:980], as.numeric)
+flat_file[,981:982] <- lapply(flat_file[,981:982], as.factor)
+flat_file[,983:1024] <- lapply(flat_file[,983:1024], as.numeric)
+flat_file$TOBACCO_USER_STATUS_DER <- as.factor(flat_file$TOBACCO_USER_STATUS_DER)
+flat_file[,1026:1030] <- lapply(flat_file[,1026:1030], as.numeric)
+flat_file$SEX_ENC_TYPE  <- as.factor(flat_file$SEX_ENC_TYPE )
+flat_file[,1032:1079] <- lapply(flat_file[,1032:1079], as.numeric)
+sum(is.na(flat_file))   
 
-#str(patients[,1:75])
-#str(patients[,76:129])
-#str(patients[,130:171])
-#str(patients[,172:179])
-#str(patients[,179:200])
-#str(patients[,201:460])
+##bring in Cindy's correct generational cohort variable
+demo_flat_file <- read.csv("Z:/Flat File/pts_demo.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+demo_flat_file$PATIENT_ID <- as.character(demo_flat_file$PATIENT_ID)
+demo_flat_file$GENERATION_CATEGORY<-as.factor(demo_flat_file$GENERATION_CATEGORY)
+demo_flat_file<-demo_flat_file[,c(1,8)]
 
-patients$PATIENT_ID <-  as.character(patients$PATIENT_ID)
-patients$HCV_STATUS <-  as.factor(patients$HCV_STATUS)
-patients[8:122] <- sapply(patients[8:122], as.numeric)
-#patients[130:160] <- sapply(patients[130:171], as.numeric)
-#patients[130:171] <- sapply(patients[130:171], as.numeric)
-#patients[173:177] <- sapply(patients[173:177], as.numeric)
-#patients[179:460] <- sapply(patients[179:460], as.numeric)
+flat_file_2<-inner_join(flat_file,demo_flat_file, by = "PATIENT_ID")
+flat_file_2$GENERATION_CATEGORY.x<-flat_file_2$GENERATION_CATEGORY.y
+names(flat_file_2$GENERATION_CATEGORY.x)<-paste("GENERATION_CATEGORY")
+flat_file<-flat_file_2[,1:1079]
 
-patients$Insurance_Gap <- as.factor(patients$Insurance_Gap)
-patients$Insurance_Aided <- as.factor(patients$Insurance_Aided)
-
-#check that there are no na's in the dataset
-sum(is.na(patients))
-
-#Demographic variables = 4-7
-#ICD codes grouped by HEDIS value sets = 8-63
-#CPT codes by HEDIS value sets = 64-122
-#Encounter variables = 123-129
-#ACS variables = 130-171
-#Social variables = 172-179
-#ICD grouped by CCS variables = 180-460
 
 # leave baselinemodel variables only
-patients<-patients[,c(1:129,172:179)]
+patients <- flat_file
+patients<-patients[,c(5:7,10:11,13:68,742:800,919,921,923,925,928,1025:1032)]
 dim(patients)
 
 ```
@@ -116,8 +97,8 @@ nrow(test_positive_imb)
 train_patients_imb<-rbind(train_negative_imb,train_positive_imb)
 test_patients_imb<-rbind(test_negative_imb,test_positive_imb)
 
-train_patients_vars_imb<-train_patients_imb[,3:ncol(train_patients_imb)]
-test_patients_vars_imb<-test_patients_imb[,3:ncol(test_patients_imb)]
+train_patients_vars_imb<-train_patients_imb
+test_patients_vars_imb<-test_patients_imb
 
 dim(train_patients_vars_imb)
 
@@ -254,19 +235,42 @@ xp_pred_over[xp_pred_over<0.5]=0
 table(test_balanced_over$HCV_STATUS,xp_pred_over)
 round(prop.table(table(test_balanced_over$HCV_STATUS,xp_pred_over),1),2)
 
-##3. LOGISTIC MODEL ON UNDERSAMPLING TECHNIQUES
-#HH - try this sampling technique once the Age category in the patients file has been binned by generation. Does not work now because there are too many categories/bins
+#3. LOGISTIC MODEL ON UNDERSAMPLING TECHNIQUES
 
-#logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
-#summary(logistic_model_under)
 
-#xp_bal_under=logistic_model_under$fitted.values
-#xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
-#UNDER_logloss_pred<-xp_pred_under
-#xp_pred_under[xp_pred_under>=0.5]=1
-#xp_pred_under[xp_pred_under<0.5]=0
-#table(test_balanced_under$HCV_STATUS,xp_pred_under)
-#round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+grep("TOBACCO_USER_STATUS_DER", colnames(data_balanced_under))
+data_balanced_under <- data_balanced_under[ ,c(1:125,127:133)]
+test_balanced_under <- test_balanced_under[ ,c(1:125,127:133)]
+dim(data_balanced_under)
+
+logistic_model_under<-glm(HCV_STATUS~. ,data=data_balanced_under, family=binomial(link=logit)) #getting error: fitted probabilities numerically 0 or 1 occurred.>
+summary(logistic_model_under)
+
+
+xp_bal_under=logistic_model_under$fitted.values
+xp_pred_under<-predict(logistic_model_under,newdata=test_balanced_under,type="response")
+UNDER_logloss_pred<-xp_pred_under
+xp_pred_under[xp_pred_under>=0.5]=1
+xp_pred_under[xp_pred_under<0.5]=0
+table(test_balanced_under$HCV_STATUS,xp_pred_under)
+round(prop.table(table(test_balanced_under$HCV_STATUS,xp_pred_under),1),2)
+
+#confusion matrix
+under_samp_log<-table(test_balanced_under$HCV_STATUS,xp_pred_under);under_samp_log
+
+#miscategorization rate
+Under_samp_miscat<-(under_samp_log[1,2]+under_samp_log[2,1])/(under_samp_log[1,2]+under_samp_log[1,1]+under_samp_log[2,1]+under_samp_log[1,2]);Under_samp_miscat
+
+#calculation logloss
+#HH-Cannot get this to produce a logloss rate. Will work on it
+xp_pred_under_logloss <- xp_pred_under
+LogLoss <- function(actual, predicted, eps=0.00001) {
+  predicted <- pmin(pmax(predicted, eps), 1-eps)
+  -1/length(actual)*(sum(actual*log(predicted)+(1-actual)*log(1-predicted)))
+}
+UNDER_logloss_log<-LogLoss(test_balanced_under$HCV_STATUS, xp_pred_under_logloss); UNDER_logloss_log
+
+
 
 ##4. LOGISTIC MODEL ON BOTH-WAY SAMPLING TECHNIQUES
 logistic_model_both<-glm(HCV_STATUS~. ,data=data_balanced_both, family=binomial(link=logit))
