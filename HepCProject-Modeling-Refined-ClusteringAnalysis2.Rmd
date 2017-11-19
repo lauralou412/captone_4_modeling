@@ -1,0 +1,281 @@
+---
+title: "capstone_modeling"
+author: "Laura Olson"
+date: "May 20, 2017"
+output: html_document
+---
+
+```{r}
+#libraries being used in this file
+library(dplyr)
+library(ROSE)
+library(rpart)
+library(Metrics)
+library(randomForest)
+library(lift)
+suppressWarnings(library(dummies))
+suppressWarnings(library(xgboost))
+library(Rmisc)
+require(stats)
+require(caret)
+
+#require(corrplot)
+#require(Rtsne)
+#require(knitr)
+#require(ggplot2)
+#knitr::opts_chunk$set(cache=TRUE)
+
+
+```
+
+
+```{r}
+  #Patient variables = 1-5
+  #Demographic variables = 6-12
+  #Freq HEDIS ICD codes = 13- 68
+  #Average HEDIS ICD codes = 69 - 124
+  #Binary HEDIS ICD codes = 125 - 180
+  #Average CCS ICD codes = 181 - 461
+  #Binary CCS ICD codes = 462 - 741
+  #Freq HEDIS PROC codes = 742 - 800
+  #Average HEDIS PROC codes = 801 - 859
+  #Binary HEDIS PROC codes = 860 - 918
+  #Totals and Averages on Encounter Type = 919 - 980
+  #Insurance = 981 - 982
+  #ACS data = 983 - 1024
+  #Social = 1025 - 1032
+  #Meds = 1033 - 1079
+
+
+###Import and format columns - choose which file to import - only one necessary
+#full data set not trimmed
+flat_file_0 <- read.csv("Z:/Flat File/patients_all_variables_09-07-2017.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+
+#1month trimmed
+flat_file_1 <- read.csv("Z:/Flat File/Date Trimmed 1 month/patients_all_variables_trimmed_1_mo_10-17-2017.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+
+#6 month trimmed
+flat_file_6 <- read.csv("Z:/Flat File/Date Trimmed 6 months/patients_all_variables_trimmed_6_mo_10-18-2017.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+
+#12 month trimmed
+flat_file_12 <- read.csv("Z:/Flat File/Date Trimmed 12 months/patients_all_variables_trimmed_12_mo_10-30-2017.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+
+#specify which file to use for this run
+flat_file<-flat_file_0
+
+```
+
+
+
+
+```{r}
+
+#reformat some of the variables to numeric or character or factor
+
+flat_file$PATIENT_ID <- as.character(flat_file$PATIENT_ID)
+flat_file[,2:3] <- lapply(flat_file[,2:3], as.Date)
+flat_file$HCV_STATUS <- as.numeric(flat_file$HCV_STATUS)
+flat_file[,6:12] <- lapply(flat_file[,6:12], as.factor)
+flat_file[,13:980] <- lapply(flat_file[,13:980], as.numeric)
+flat_file[,981:982] <- lapply(flat_file[,981:982], as.factor)
+flat_file[,983:1024] <- lapply(flat_file[,983:1024], as.numeric)
+flat_file$TOBACCO_USER_STATUS_DER <- as.factor(flat_file$TOBACCO_USER_STATUS_DER)
+flat_file[,1026:1030] <- lapply(flat_file[,1026:1030], as.numeric)
+flat_file$SEX_ENC_TYPE  <- as.factor(flat_file$SEX_ENC_TYPE )
+flat_file[,1032:1079] <- lapply(flat_file[,1032:1079], as.numeric)
+sum(is.na(flat_file))   
+
+##bring in Cindy's correct generational cohort variable recalculated later after the flat file was generated
+demo_flat_file <- read.csv("Z:/Flat File/pts_demo.csv", ",", header = TRUE, stringsAsFactors = FALSE)
+demo_flat_file$PATIENT_ID <- as.character(demo_flat_file$PATIENT_ID)
+demo_flat_file$GENERATION_CATEGORY<-as.factor(demo_flat_file$GENERATION_CATEGORY)
+demo_flat_file<-demo_flat_file[,c(1,8)]
+
+flat_file_2<-inner_join(flat_file,demo_flat_file, by = "PATIENT_ID")
+flat_file_2$GENERATION_CATEGORY.x<-flat_file_2$GENERATION_CATEGORY.y
+names(flat_file_2$GENERATION_CATEGORY.x)<-paste("GENERATION_CATEGORY")
+flat_file<-flat_file_2[,1:1079]
+```
+
+```{r}
+
+##REFINED MODEL VARIABLES###
+#select expanded model variables only
+model_variables <- flat_file[c(5:12, 69:124, 181:461, 801:859, 920, 922, 924, 925, 927, 929:1079)]
+dim(model_variables)
+patients <- model_variables
+
+dim(patients)
+## Code to remove duplicating and correlated variables - Remove Average_ICD varialbes and leave Average_ICD_CCS
+patients<-patients[,-c(65:345)]
+dim(patients)
+
+###cpt variables logic to combine varibles
+patients[,(ncol(patients)+1)]<-patients$AVERAGE_PROC_76826+patients$AVERAGE_PROC_76828
+names(patients)[ncol(patients)]<-paste("AVE_COMB_ECHOCARDIOGRAPHY")
+
+patients[,(ncol(patients)+1)]<-patients$AVERAGE_PROC_86631+patients$AVERAGE_PROC_86632
+names(patients)[ncol(patients)]<-paste("AVE_COMB_CHLAMYDIA")
+
+patients[,(ncol(patients)+1)]<-patients$AVERAGE_PROC_76813+patients$AVERAGE_PROC_84163
+names(patients)[ncol(patients)]<-paste("AVE_COMB_PREGNANCY_REL")
+
+patients[,(ncol(patients)+1)]<-patients$AVERAGE_PROC_59000+patients$AVERAGE_PROC_76946
+names(patients)[ncol(patients)]<-paste("AVE_COMB_AMNIOCENTESIS")
+
+dim(patients)
+
+## remove component variables for the ones combined above
+patients<-patients[,-c(grep("AVERAGE_PROC_76826", colnames(patients)),
+  grep("AVERAGE_PROC_76828", colnames(patients)),
+  grep("AVERAGE_PROC_86631", colnames(patients)),
+  grep("AVERAGE_PROC_86632", colnames(patients)),
+  grep("AVERAGE_PROC_76813", colnames(patients)),
+  grep("AVERAGE_PROC_84163", colnames(patients)),
+  grep("AVERAGE_PROC_59000", colnames(patients)),
+  grep("AVERAGE_PROC_76946", colnames(patients))
+)]
+dim(patients)
+
+
+###encounter tab variables logic to combine
+patients[,(ncol(patients)+1)]<-patients$AVERAGE_ENC_TYPE_52+patients$AVERAGE_ENC_TYPE_53
+names(patients)[ncol(patients)]<-paste("AVE_COMB_ANESTHESIA")
+
+dim(patients)
+
+##remove combined variables from encounters table
+patients<-patients[,-c(grep("AVERAGE_ENC_TYPE_52", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_53", colnames(patients)),
+  grep("Avg_Num_Billable_Enc_yr", colnames(patients)),
+  grep("Avg_Num_Outpt_Encounters_yr", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_109", colnames(patients)),
+  grep("Avg_Num_Inpt_Admits_yr", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_50", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_111", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_3", colnames(patients)),
+  grep("Avg_Num_ED_Visits_yr", colnames(patients)),
+  grep("Avg_Num_ED_Encounters_yr", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_51", colnames(patients)),
+  grep("AVERAGE_ENC_TYPE_53", colnames(patients))
+)]
+
+dim(patients)
+
+
+##logic to remove variables from the ACS table
+patients<-patients[,-c(grep("Pct_Non_Hispanic", colnames(patients)),
+  grep("Pct_HS_or_More", colnames(patients)),
+  grep("Pct_Pop_Female", colnames(patients)),
+  grep("Pct_White_Alone", colnames(patients)),
+  grep("Median_Age_Female", colnames(patients)),
+  grep("Pct_NeveR_Married", colnames(patients)),
+  grep("Pct_Masters_or_More", colnames(patients)),
+  grep("Median_Age_Male", colnames(patients)),
+  grep("Pct_Some_College_or_More", colnames(patients)),
+  grep("Pct_Bach_or_More", colnames(patients))
+)]
+
+dim(patients)
+
+
+#get column index
+#grep("AVERAGE_ICD_0042", colnames(patients))
+
+```
+
+
+
+```{r}
+##### BUILD SAMPLED DATASETS
+
+set.seed(12345)
+
+### build train data set to use with different sampling techniques
+#separate positive and negative patients into separate tables
+#patients_negative_imb<-subset(patients,patients$HCV_STATUS==0)
+patients_positive<-subset(patients,patients$HCV_STATUS==1)
+#remove the HCV postiive variable
+patients_positive<-patients_positive[,-1]
+#convert the categorical variables to integers for the clustering
+patients_positive$GENDER_num<-as.numeric(patients_positive$GENDER)
+patients_positive$RACE_num<-as.numeric(patients_positive$RACE)
+patients_positive$ETHNICITY_num<-as.numeric(patients_positive$ETHNICITY)
+patients_positive$LANGUAGE_num<-as.numeric(patients_positive$LANGUAGE)
+patients_positive$MARITAL_STATUS_num<-as.numeric(patients_positive$MARITAL_STATUS)
+patients_positive$AGE_CATEGORY_num<-as.numeric(patients_positive$AGE_CATEGORY)
+patients_positive$GENERATION_CATEGORY.x_num<-as.numeric(patients_positive$GENERATION_CATEGORY.x)
+patients_positive$TOBACCO_USER_STATUS_DER_num<-as.numeric(patients_positive$TOBACCO_USER_STATUS_DER)
+patients_positive$Insurance_Gap_num<-as.numeric(patients_positive$Insurance_Gap)
+patients_positive$Insurance_Aided_num<-as.numeric(patients_positive$Insurance_Aided)
+patients_positive$SEX_ENC_TYPE_num<-as.numeric(patients_positive$SEX_ENC_TYPE)
+
+
+```
+
+```{r}
+
+zero.var = nearZeroVar(patients_positive, saveMetrics=TRUE)
+zero.var
+
+#remove factor variables
+
+
+
+#remove variables with zero variance
+#patients_positive2<-patients_positive[,-c(1,2,3,4,5,6,7,15,17,20,29,42,43,44,45,46,56,62,63,64,65,66,67,70,71,72,73,74,75,77,78,79,84,85,86,88,89,90,91,92,93,95,96,99,103,105,111,113,118,121,122,125,126,128,129,131,132,138,149,160,161,194,200,248,249,250,252)]
+
+#remove variables with near zero variance
+patients_positive2<-patients_positive[,-c(1,2,3,4,5,6,7,15,17,20,29,42,43,44,45,46,56,62,63,64,65,66,67,70,71,72,73,74,75,77,78,79,84,85,86,88,89,90,91,92,93,95,96,99,103,105,111,113,118,121,122,125,126,128,129,131,132,138,149,160,161,194,200,248,249,250,252,4,8,9,10,11,12,13,14,16,18,19,21,22,23,24,25,26,27,28,30,31,32,33,34,35,36,37,38,39,40,41,47,48,49,50,51,52,53,54,55,57,59,60,68,69,76,80,81,82,83,87,94,97,98,100,101,102,104,106,107,108,109,110,112,114,119,120,123,127,136,137,139,140,141,143,144,145,146,147,148,150,151,152,153,154,156,157,158,159,195,196,198,202,205,210,211,212,216,217,218,219,220,221,222,223,227,228,229,230,235,237,238,239,240,242,243,244,245,251,253)]
+
+patients_positive<-patients_positive2
+
+#write.table(zero.var, "Z:/HristinasFolder/20171118/zerovar-patients.xlx", sep="\t")
+
+
+```
+
+
+
+```{r}
+###CLUSTERING TECHNIQUE
+
+# Prepare Data
+mydata <- na.omit(patients_positive) # listwise deletion of missing
+mydata <- scale(mydata) # standardize variables
+
+# Determine number of clusters
+wss <- (nrow(mydata)-1)*sum(apply(mydata,2,var))
+for (i in 2:30) wss[i] <- sum(kmeans(mydata,
+   centers=i)$withinss)
+plot(1:30, wss, type="b", xlab="Number of Clusters",
+  ylab="Within groups sum of squares") 
+
+
+# K-Means Cluster Analysis
+fit <- kmeans(mydata, 5) # 5 cluster solution
+# get cluster means
+agg.means<-aggregate(mydata,by=list(fit$cluster),FUN=mean)
+write.table(agg.means, "Z:/HristinasFolder/20171118/ClustMeans.xlx", sep="\t")
+# append cluster assignment
+mydata <- data.frame(mydata, fit$cluster) 
+
+
+# K-Means Clustering with 5 clusters
+fit <- kmeans(mydata, 5)
+
+# Cluster Plot against 1st 2 principal components
+
+# vary parameters for most readable graph
+library(cluster)
+clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE,
+   labels=1, lines=0)
+
+# Centroid Plot against 1st 2 discriminant functions
+library(fpc)
+plotcluster(mydata, fit$cluster) 
+
+
+
+```
+
